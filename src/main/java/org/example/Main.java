@@ -22,8 +22,8 @@ import static com.mongodb.client.model.Filters.*;
 public class Main {
 
     private static final String CONNECTION_STRING = "mongodb://localhost:27017/";
-    private static final String DATABASE_NAME = "ETL";
-    private static final String COLLECTION_NAME = "ETL";
+    private static final String DATABASE_NAME = "Vodokonal-parser-db";
+    private static final String COLLECTION_NAME = "Vodokonal-parser-collection";
 
     private static final int PROGRESS_INTERVAL = 1000;
 
@@ -48,28 +48,14 @@ public class Main {
             try (BufferedReader reader = new BufferedReader(
                     new InputStreamReader(
                             new FileInputStream(filePath),
-                            Charset.forName("windows-1251")  // Указать правильную кодировку
+                            Charset.forName("UTF-8") // Changed from windows-1251 to UTF-8
                     )
             )) {
                 String line;
                 while ((line = reader.readLine()) != null) {
-                    System.out.println("Прочитана строка: '" + line + "'");
-                    System.out.println("Содержит 900005777: " + line.contains("900005777"));
-                    System.out.println("Содержит Кольчугино: " + line.contains("Кольчугино"));
-                    System.out.println("Длина после trim(): " + line.trim().length());
                     if (line.trim().isEmpty()) {
-                        System.out.println("Пропускаем пустую строку");
                         continue;
-                        }
-                    if (line.contains("Кольчугино г, Добровольского ул, 17, 114")) {
-                        System.out.println("НАЙДЕНА ЦЕЛЕВАЯ СТРОКА!");
-                        System.out.println("Полная строка: " + line);
                     }
-
-                    if (line.contains("17, 114")) {
-                        System.out.println("Строка с 17, 114: " + line);
-                    }
-
 
                     totalCount++;
 
@@ -148,19 +134,7 @@ public class Main {
     private static ParseResult parseRecord(String line) {
         try {
 
-            if (line.contains("900005777")) {
-                System.out.println("=== ОТЛАДКА СПЕЦИАЛЬНОЙ СТРОКИ ===");
-                System.out.println("Исходная строка: " + line);
-                System.out.println("Длина строки: " + line.length());
-                for (int i = 0; i < line.length(); i++) {
-                    char c = line.charAt(i);
-                    System.out.println("Символ " + i + ": '" + c + "' (код: " + (int)c + ")");
-                }
-            }
-
             String[] parts = line.split(";");
-            System.out.println("Обрабатываем строку: " + line);
-            System.out.println("Количество частей после split(';'): " + parts.length);
 
             // Проверяем минимальное количество частей
             if (parts.length < 5) {
@@ -182,9 +156,6 @@ public class Main {
             // 3. Адрес (разделенный запятыми)
             String addressStr = parts[2].trim();
             String[] addressParts = addressStr.split(",");
-            System.out.println("Адрес: '" + addressStr + "'");
-            System.out.println("Части адреса: " + Arrays.toString(addressParts));
-            System.out.println("Количество частей: " + addressParts.length);
 
             if (addressParts.length < 3) {
                 return new ParseResult(false, "Неполный адрес", null);
@@ -259,12 +230,10 @@ public class Main {
                     charges
             );
 
-            System.out.println("Результат валидации: true, Ошибка: null");
             return new ParseResult(true, null, recordData);
 
         } catch (Exception e) {
             ParseResult result = new ParseResult(false, "Ошибка парсинга строки: " + e.getMessage(), null);
-            System.out.println("Результат валидации: " + result.isValid() + ", Ошибка: " + result.errorMessage());
             return result;
         }
     }
