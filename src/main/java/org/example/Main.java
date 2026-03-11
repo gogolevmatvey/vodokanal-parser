@@ -1,115 +1,83 @@
 package org.example;
 
-import com.mongodb.client.MongoClient;
-import com.mongodb.client.MongoClients;
-import com.mongodb.client.MongoCollection;
-import com.mongodb.client.MongoDatabase;
-import org.bson.Document;
-
 import java.io.BufferedReader;
-import java.io.FileReader;
 import java.io.IOException;
 import java.nio.charset.Charset;
 import java.io.FileInputStream;
 import java.io.InputStreamReader;
+import java.io.BufferedWriter;
+import java.io.OutputStreamWriter;
+import java.io.FileOutputStream;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
-
-
-import static com.mongodb.client.model.Filters.*;
+import java.util.Map;
+import java.util.HashMap;
 
 public class Main {
-
-    private static final String CONNECTION_STRING = "mongodb://localhost:27017/";
-    private static final String DATABASE_NAME = "Vodokonal-parser-db";
-    private static final String COLLECTION_NAME = "Vodokonal-parser-collection";
 
     private static final int PROGRESS_INTERVAL = 1000;
 
     public static void main(String[] args) {
-        try (MongoClient mongoClient = MongoClients.create(CONNECTION_STRING)) {
-            MongoDatabase database = mongoClient.getDatabase(DATABASE_NAME);
-            MongoCollection<Document> collection = database.getCollection(COLLECTION_NAME);
+        String filePath = "Testovye_dannye (1).txt";
+        String validFilePath = "valid_records.txt";
+        String invalidFilePath = "invalid_records.txt";
 
-            // Очистка коллекции перед новой загрузкой
-            System.out.println("Очищаем коллекцию...");
-            collection.drop();
-            System.out.println("Коллекция очищена");
+        int validCount = 0;
+        int invalidCount = 0;
+        int totalCount = 0;
 
-            String filePath = "Testovye_dannye (1).txt"; // Путь к вашему файлу
-
-            int validCount = 0;
-            int invalidCount = 0;
-            List<String> invalidRecords = new ArrayList<>();
-
-            int totalCount = 0;
-
-            try (BufferedReader reader = new BufferedReader(
+        try (BufferedReader reader = new BufferedReader(
                     new InputStreamReader(
                             new FileInputStream(filePath),
-                            Charset.forName("UTF-8") // Changed from windows-1251 to UTF-8
+                            Charset.forName("UTF-8")
                     )
-            )) {
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    if (line.trim().isEmpty()) {
-                        continue;
-                    }
+                );
+                BufferedWriter validWriter = new BufferedWriter(
+                        new OutputStreamWriter(new FileOutputStream(validFilePath), Charset.forName("UTF-8"))
+                );
+                BufferedWriter invalidWriter = new BufferedWriter(
+                        new OutputStreamWriter(new FileOutputStream(invalidFilePath), Charset.forName("UTF-8"))
+                )) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                if (line.trim().isEmpty()) {
+                    continue;
+                }
 
-                    totalCount++;
+                totalCount++;
 
-                    ParseResult result = parseRecord(line);
-                    Document doc = new Document()
-                            .append("originalLine", line)
-                            .append("isValid", result.isValid())
-                            .append("validationError", result.errorMessage());
+                ParseResult result = parseRecord(line);
 
-                    if (result.isValid()) {
-                        // Добавляем поля данных только если запись валидна
-                        doc.append("accountNumber", result.recordData().accountNumber())
-                                .append("payerName", result.recordData().payerName())
-                                .append("address", result.recordData().address())
-                                .append("billingPeriod", result.recordData().billingPeriod())
-                                .append("charges", result.recordData().charges());
-                        validCount++;
-                    } else {
-                        invalidCount++;
-                        invalidRecords.add(result.errorMessage() + ": " + line);
-                    }
+                if (result.isValid()) {
+                    validCount++;
+                    validWriter.write(line);
+                    validWriter.newLine();
+                } else {
+                    invalidCount++;
+                    invalidWriter.write(line + " | Ошибка: " + result.errorMessage());
+                    invalidWriter.newLine();
+                }
 
-                    collection.insertOne(doc);
-
-                    if (totalCount % PROGRESS_INTERVAL == 0) {
-                        System.out.printf("Обработано строк: %d, Валидных: %d, Ошибок: %d%n",
-                                totalCount, validCount, invalidCount);
-                    }
+                if (totalCount % PROGRESS_INTERVAL == 0) {
+                    System.out.printf("Обработано строк: %d, Валидных: %d, Ошибок: %d%n",
+                            totalCount, validCount, invalidCount);
                 }
             }
-
-            // Вывод статистики
-            long totalRecords = validCount + invalidCount;
-            double validPercent = totalRecords > 0 ? (double) validCount / totalRecords * 100 : 0;
-            double invalidPercent = totalRecords > 0 ? (double) invalidCount / totalRecords * 100 : 0;
-
-            System.out.println("=== Результаты обработки ===");
-            System.out.println("Всего обработано записей: " + totalRecords);
-            System.out.println("Успешно обработано: " + validCount + " (" + String.format("%.2f", validPercent) + "%)");
-            System.out.println("С ошибками: " + invalidCount + " (" + String.format("%.2f", invalidPercent) + "%)");
-
-            if (!invalidRecords.isEmpty()) {
-                System.out.println("\nПримеры невалидных записей:");
-                for (int i = 0; i < Math.min(5, invalidRecords.size()); i++) {
-                    System.out.println("- " + invalidRecords.get(i));
-                }
-            }
-
         } catch (IOException e) {
             System.err.println("Ошибка чтения файла: " + e.getMessage());
-        } catch (Exception e) {
-            System.err.println("Ошибка подключения к MongoDB: " + e.getMessage());
-            e.printStackTrace();
         }
+
+        // Вывод статистики
+        long totalRecords = validCount + invalidCount;
+        double validPercent = totalRecords > 0 ? (double) validCount / totalRecords * 100 : 0;
+        double invalidPercent = totalRecords > 0 ? (double) invalidCount / totalRecords * 100 : 0;
+
+        System.out.println("=== Результаты обработки ===");
+        System.out.println("Всего обработано записей: " + totalRecords);
+        System.out.println("Успешно обработано: " + validCount + " (" + String.format("%.2f", validPercent) + "%)");
+        System.out.println("С ошибками: " + invalidCount + " (" + String.format("%.2f", invalidPercent) + "%)");
+        System.out.println("Валидные записи сохранены в файл: " + validFilePath);
+        System.out.println("Записи с ошибками сохранены в файл: " + invalidFilePath);
     }
 
     /**
@@ -123,9 +91,9 @@ public class Main {
     private record RecordData(
             String accountNumber,
             String payerName,
-            Document address,
+            Map<String, Object> address,
             String billingPeriod,
-            List<Document> charges
+            List<Map<String, Object>> charges
     ) {}
 
     /**
@@ -147,14 +115,18 @@ public class Main {
                 return new ParseResult(false, "Пустой номер лицевого счета", null);
             }
 
-            // 2. ФИО плательщика
+            // 2. ФИО плательщика - должно быть обязательно
             String payerName = parts[1].trim();
-            if (payerName.isEmpty()) {
+            if (payerName.isEmpty() || payerName.matches("\\s*") || payerName.contains(",") || payerName.matches("^[.\\*\\s\\d]+$")) {
                 return new ParseResult(false, "Пустое ФИО плательщика", null);
             }
 
             // 3. Адрес (разделенный запятыми)
             String addressStr = parts[2].trim();
+            if (addressStr.isEmpty()) {
+                return new ParseResult(false, "Пустой адрес", null);
+            }
+            
             String[] addressParts = addressStr.split(",");
 
             if (addressParts.length < 3) {
@@ -174,11 +146,11 @@ public class Main {
                 }
             }
 
-            Document addressDoc = new Document()
-                    .append("locality", locality)
-                    .append("street", street)
-                    .append("house", house)
-                    .append("apartments", apartments);
+            Map<String, Object> addressDoc = new HashMap<>();
+            addressDoc.put("locality", locality);
+            addressDoc.put("street", street);
+            addressDoc.put("house", house);
+            addressDoc.put("apartments", apartments);
 
             // 4. Период начисления
             String billingPeriod = parts[3].trim();
@@ -186,39 +158,73 @@ public class Main {
                 return new ParseResult(false, "Пустой период начисления", null);
             }
 
-            // 5. Суммы начисления и приборы учета
-            List<Document> charges = new ArrayList<>();
+            // 5. Суммы начисления, приборы учета и показания
+            List<Map<String, Object>> charges = new ArrayList<>();
 
             // Если в строке 5 частей - это простой случай (только сумма)
             if (parts.length == 5) {
                 try {
                     double amount = Double.parseDouble(parts[4].trim());
-                    charges.add(new Document()
-                            .append("amount", amount)
-                            .append("meter", null));
+                    Map<String, Object> charge = new HashMap<>();
+                    charge.put("amount", amount);
+                    charge.put("meter", null);
+                    charge.put("meterReading", null);
+                    charges.add(charge);
                 } catch (NumberFormatException e) {
                     return new ParseResult(false, "Неверный формат суммы начисления: " + parts[4], null);
                 }
             }
-            // Иначе обрабатываем пары полей (сумма, прибор учета)
+            // Иначе обрабатываем: первая сумма, затем пары (прибор, показания)
             else {
-                for (int i = 4; i < parts.length; i += 2) {
-                    try {
-                        double amount = Double.parseDouble(parts[i].trim());
-
-                        // Проверяем наличие следующего поля (прибора учета)
-                        String meter = null;
-                        if (i + 1 < parts.length) {
-                            meter = parts[i + 1].trim();
-                            if (meter.isEmpty()) meter = null;
+                try {
+                    // Первое поле после периода - это сумма
+                    double amount = Double.parseDouble(parts[4].trim());
+                    
+                    // Собираем все приборы и показания
+                    List<String> meters = new ArrayList<>();
+                    List<Double> readings = new ArrayList<>();
+                    
+                    for (int i = 5; i < parts.length; i += 2) {
+                        String meter = parts[i].trim();
+                        if (meter.isEmpty()) {
+                            meter = null;
                         }
-
-                        charges.add(new Document()
-                                .append("amount", amount)
-                                .append("meter", meter));
-                    } catch (NumberFormatException e) {
-                        return new ParseResult(false, "Неверный формат суммы начисления: " + parts[i], null);
+                        
+                        Double reading = null;
+                        if (i + 1 < parts.length) {
+                            String readingStr = parts[i + 1].trim();
+                            if (!readingStr.isEmpty()) {
+                                try {
+                                    reading = Double.parseDouble(readingStr);
+                                } catch (NumberFormatException e) {
+                                    // Игнорируем неверные показания
+                                }
+                            }
+                        }
+                        
+                        meters.add(meter);
+                        readings.add(reading);
                     }
+                    
+                    // Если есть приборы - создаем запись для каждого
+                    if (!meters.isEmpty()) {
+                        for (int i = 0; i < meters.size(); i++) {
+                            Map<String, Object> charge = new HashMap<>();
+                            charge.put("amount", amount);
+                            charge.put("meter", meters.get(i));
+                            charge.put("meterReading", readings.get(i));
+                            charges.add(charge);
+                        }
+                    } else {
+                        // Нет приборов - просто сумма
+                        Map<String, Object> charge = new HashMap<>();
+                        charge.put("amount", amount);
+                        charge.put("meter", null);
+                        charge.put("meterReading", null);
+                        charges.add(charge);
+                    }
+                } catch (NumberFormatException e) {
+                    return new ParseResult(false, "Неверный формат суммы начисления: " + parts[4], null);
                 }
             }
 
@@ -233,8 +239,7 @@ public class Main {
             return new ParseResult(true, null, recordData);
 
         } catch (Exception e) {
-            ParseResult result = new ParseResult(false, "Ошибка парсинга строки: " + e.getMessage(), null);
-            return result;
+            return new ParseResult(false, "Ошибка парсинга строки: " + e.getMessage(), null);
         }
     }
 }
