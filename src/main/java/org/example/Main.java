@@ -409,8 +409,8 @@ public class Main {
             writer.write(String.format("Исправлено ошибок: %,d (%.2f%%)\n", totalCorrected, (double) totalCorrected / totalCount * 100));
             writer.write(String.format("Не исправлено: %,d (%.2f%%)\n", totalUncorrected, (double) totalUncorrected / totalCount * 100));
             writer.write(String.format("Типов ошибок: %,d\n\n", errorCounts.size()));
-            writer.write("Примечание: Некоторые ошибки (неполный адрес, пустая часть адреса, подозрительный адрес)\n");
-            writer.write("не могут быть исправлены автоматически без потери данных или требуют ручного вмешательства.\n\n");
+            writer.write("Примечание: Некоторые ошибки (пустая часть адреса) не могут быть исправлены\n");
+            writer.write("автоматически без потери данных или требуют ручного вмешательства.\n\n");
 
             writer.write("--------------------------------------------------------------------------------\n");
             writer.write("ГРУППИРОВКА ПО ТИПАМ ОШИБОК:\n");
@@ -457,7 +457,14 @@ public class Main {
         // Проверяем, содержит ли исправленная запись признаки исправления
         switch (errorType) {
             case "Пустое ФИО плательщика":
-                return correctedLine.contains("данные отсутствуют");
+                // Проверяем, что ФИО не пустое (исправлено или было не пустым)
+                String[] nameParts = correctedLine.split(";");
+                if (nameParts.length > 1) {
+                    String correctedName = nameParts[1].trim();
+                    // Исправлено, если ФИО не пустое
+                    return !correctedName.isEmpty();
+                }
+                return false;
             case "Неполный адрес":
             case "Неполный адрес (меньше 3 запятых)":
                 // Проверяем количество запятых в адресе (поле 3)
@@ -485,10 +492,12 @@ public class Main {
                 // Сложно определить, оставим как неисправленное
                 return false;
             case "Подозрительный адрес":
-                // Слишком много запятых - исправляется слиянием
+            case "Подозрительный адрес (больше 5 запятых)":
+                // Слишком много запятых - исправляется объединением квартир
                 String[] suspectAddrParts = correctedLine.split(";");
                 if (suspectAddrParts.length > 2) {
                     int commaCount = countChar(suspectAddrParts[2], ',');
+                    // Адрес исправлен, если теперь <= 5 запятых
                     return commaCount <= 5;
                 }
                 return false;
@@ -507,20 +516,33 @@ public class Main {
 
         // Если недостаточно полей - пытаемся восстановить
         if (parts.length < 5) {
-            // Добавляем недостающие поля
-            while (parts.length < 5) {
+            // Проверяем, не является ли parts[1] адресом (содержит запятые и ключевые слова адреса)
+            if (parts.length >= 2 && parts[1].contains(",") && 
+                (parts[1].contains("ул") || parts[1].contains("мкр") || parts[1].contains(" с") || 
+                 parts[1].contains(" п") || parts[1].contains(" г") || parts[1].contains(" дер"))) {
+                // ФИО отсутствует, адрес на месте ФИО - вставляем "данные отсутствуют" и сдвигаем поля
                 String[] newParts = new String[parts.length + 1];
-                System.arraycopy(parts, 0, newParts, 0, parts.length);
-                newParts[parts.length] = "";
+                newParts[0] = parts[0]; // номер счета
+                newParts[1] = "данные отсутствуют"; // ФИО
+                System.arraycopy(parts, 1, newParts, 2, parts.length - 1); // сдвигаем остальные поля
                 parts = newParts;
+            } else {
+                // Просто добавляем недостающие поля в конец
+                while (parts.length < 5) {
+                    String[] newParts = new String[parts.length + 1];
+                    System.arraycopy(parts, 0, newParts, 0, parts.length);
+                    newParts[parts.length] = "";
+                    parts = newParts;
+                }
             }
         }
 
-        // 1. Исправление ФИО (если пустое или ".*")
+        // 1. Исправление ФИО (если полностью пустое)
         String payerName = parts[1].trim();
-        if (payerName.isEmpty() || payerName.matches("^[.\\*\\s]+$") || payerName.matches("^[\\d\\s]+$")) {
+        if (payerName.isEmpty()) {
             parts[1] = "данные отсутствуют";
         }
+        // Если ФИО содержит какие-либо данные (даже "* * *" или "4 * *"), оставляем как есть
 
         // 2. Исправление адреса
         if (parts.length > 2) {
@@ -536,31 +558,47 @@ public class Main {
 
                 // Если всего 1 часть (0 запятых) - это населенный пункт
                 if (commaCount == 0) {
-                    parts[2] = locality + ", Улица не указана, Дом не указан, 0";
+                    parts[2] = locality + ", Улица не указана, Дом не указан, Квартира не указана";
                 }
-                // Если 2 запятые (1 часть) - это населенный пункт и улица
+                // Если 1 запятая (2 части) - это населенный пункт и улица
                 else if (commaCount == 1) {
-                    parts[2] = locality + ", " + street + ", Дом не указан, 0";
+                    parts[2] = locality + ", " + street + ", Дом не указан, Квартира не указана";
                 }
-                // Если 2 запятые - это населенный пункт, улица и дом, но нет квартиры
+                // Если 2 запятые (3 части) - это населенный пункт, ?, ?
+                // Определяем, что является чем:
+                // Если 3-я часть число → это квартира, 2-я часть → дом, улицы нет
+                // Если 3-я часть не число → это дом, 2-я часть → улица, квартиры нет
                 else if (commaCount == 2) {
-                    parts[2] = locality + ", " + street + ", " + house + ", 0";
+                    String part2 = addressParts[1].trim();
+                    String part3 = addressParts[2].trim();
+                    
+                    if (part3.matches("^\\d+$")) {
+                        // 3-я часть - квартира (число), 2-я - дом, улицы нет
+                        parts[2] = locality + ", Улица не указана, " + part2 + ", " + part3;
+                    } else {
+                        // 3-я часть - дом (не число), 2-я - улица, квартиры нет
+                        parts[2] = locality + ", " + part2 + ", " + part3 + ", Квартира не указана";
+                    }
                 }
             }
-            // Если больше 3 запятых (больше 4 частей) - сливаем лишние
-            else if (addressParts.length > 4) {
-                // Сливаем первые поля (населенный пункт + микрорайон/доп.информация)
-                StringBuilder localityBuilder = new StringBuilder(addressParts[0].trim());
-                for (int i = 1; i <= addressParts.length - 3; i++) {
-                    localityBuilder.append(", ").append(addressParts[i].trim());
+            // Если больше 3 запятых (больше 4 частей) - сливаем лишние квартиры
+            else if (commaCount > 3) {
+                // Первые 3 части: населенный пункт, улица, дом
+                String locality = addressParts[0].trim();
+                String street = addressParts[1].trim();
+                String house = addressParts[2].trim();
+
+                // Объединяем все квартиры в одно поле через пробел (чтобы уменьшить количество запятых)
+                StringBuilder apartmentBuilder = new StringBuilder();
+                for (int i = 3; i < addressParts.length; i++) {
+                    if (apartmentBuilder.length() > 0) {
+                        apartmentBuilder.append(" ");
+                    }
+                    apartmentBuilder.append(addressParts[i].trim());
                 }
+                String apartment = apartmentBuilder.toString();
 
-                // Последние 3 части: улица, дом, квартира
-                String street = addressParts[addressParts.length - 3].trim();
-                String house = addressParts[addressParts.length - 2].trim();
-                String apartment = addressParts[addressParts.length - 1].trim();
-
-                parts[2] = localityBuilder.toString() + ", " + street + ", " + house + ", " + apartment;
+                parts[2] = locality + ", " + street + ", " + house + ", " + apartment;
             }
             // Если после дома несколько полей (4 части всего) - сливаем в одно
             else if (addressParts.length == 4) {
