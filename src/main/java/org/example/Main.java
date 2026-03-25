@@ -13,10 +13,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.HashMap;
 import java.util.TreeMap;
+import java.sql.SQLException;
 
 public class Main {
 
     private static final int PROGRESS_INTERVAL = 1000;
+    private static final int DB_BATCH_SIZE = 500;
 
     public static void main(String[] args) {
         String filePath = "Testovye_dannye (1).txt";
@@ -31,85 +33,139 @@ public class Main {
         int correctedCount = 0;
         int uncorrectedCount = 0;
         int totalCount = 0;
+        int dbSavedCount = 0;
+        int dbErrorCount = 0;
 
         // Карта для группировки ошибок по типам
         Map<String, Integer> errorCounts = new TreeMap<>();
         Map<String, List<String>> errorSamples = new HashMap<>();
         // Карта для подсчета исправленных ошибок по типам
         Map<String, Integer> correctedErrorCounts = new TreeMap<>();
+        // Карта для группировки ошибок БД по типам
+        Map<String, Integer> dbErrorCounts = new TreeMap<>();
+        Map<String, List<String>> dbErrorSamples = new HashMap<>();
 
-        try (BufferedReader reader = new BufferedReader(
-                    new InputStreamReader(
-                            new FileInputStream(filePath),
-                            Charset.forName("UTF-8")
-                    )
-                );
-                BufferedWriter validWriter = new BufferedWriter(
-                        new OutputStreamWriter(new FileOutputStream(validFilePath), Charset.forName("UTF-8"))
-                );
-                BufferedWriter invalidWriter = new BufferedWriter(
-                        new OutputStreamWriter(new FileOutputStream(invalidFilePath), Charset.forName("UTF-8"))
-                );
-                BufferedWriter correctedWriter = new BufferedWriter(
-                        new OutputStreamWriter(new FileOutputStream(correctedFilePath), Charset.forName("UTF-8"))
-                );
-                BufferedWriter uncorrectedWriter = new BufferedWriter(
-                        new OutputStreamWriter(new FileOutputStream(uncorrectedFilePath), Charset.forName("UTF-8"))
-                )) {
-            String line;
-            while ((line = reader.readLine()) != null) {
-                if (line.trim().isEmpty()) {
-                    continue;
-                }
+        // Инициализация БД
+        System.out.println("Подключение к базе данных PostgreSQL...");
+        try (DatabaseManager dbManager = new DatabaseManager()) {
+            dbManager.initializeDatabase();
+            
+            AddressRepository addressRepo = new AddressRepository(dbManager);
+            AccountRepository accountRepo = new AccountRepository(dbManager);
+            BillingRepository billingRepo = new BillingRepository(dbManager);
+            
+            addressRepo.init();
+            accountRepo.init();
+            billingRepo.init();
 
-                totalCount++;
+            System.out.println("База данных готова к работе.");
+            System.out.println();
 
-                ParseResult result = parseRecord(line);
+            // Счетчики для пакетной вставки в БД
+            List<String> dbBatch = new ArrayList<>();
+            
+            try (BufferedReader reader = new BufferedReader(
+                        new InputStreamReader(
+                                new FileInputStream(filePath),
+                                Charset.forName("UTF-8")
+                        )
+                    );
+                    BufferedWriter validWriter = new BufferedWriter(
+                            new OutputStreamWriter(new FileOutputStream(validFilePath), Charset.forName("UTF-8"))
+                    );
+                    BufferedWriter invalidWriter = new BufferedWriter(
+                            new OutputStreamWriter(new FileOutputStream(invalidFilePath), Charset.forName("UTF-8"))
+                    );
+                    BufferedWriter correctedWriter = new BufferedWriter(
+                            new OutputStreamWriter(new FileOutputStream(correctedFilePath), Charset.forName("UTF-8"))
+                    );
+                    BufferedWriter uncorrectedWriter = new BufferedWriter(
+                            new OutputStreamWriter(new FileOutputStream(uncorrectedFilePath), Charset.forName("UTF-8"))
+                    )) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    if (line.trim().isEmpty()) {
+                        continue;
+                    }
 
-                if (result.isValid()) {
-                    validCount++;
-                    validWriter.write(line);
-                    validWriter.newLine();
-                } else {
-                    invalidCount++;
-                    invalidWriter.write(line + " | Ошибка: " + result.errorMessage());
-                    invalidWriter.newLine();
+                    totalCount++;
 
-                    // Исправляем запись и проверяем результат
-                    String correctedLine = correctRecord(line, result.errorMessage());
-                    String errorType = extractErrorType(result.errorMessage());
-                    boolean wasCorrected = isRecordCorrected(correctedLine, errorType);
+                    ParseResult result = parseRecord(line);
 
-                    if (wasCorrected) {
-                        // Запись исправлена - пишем в corrected_records.txt
-                        correctedWriter.write(correctedLine);
-                        correctedWriter.newLine();
-                        correctedCount++;
-                        correctedErrorCounts.put(errorType, correctedErrorCounts.getOrDefault(errorType, 0) + 1);
+                    if (result.isValid()) {
+                        validCount++;
+                        validWriter.write(line);
+                        validWriter.newLine();
+
+                        // Сохраняем в БД
+                        dbBatch.add(line);
+                        if (dbBatch.size() >= DB_BATCH_SIZE) {
+                            int[] stats = saveToDatabaseWithStats(dbBatch, addressRepo, accountRepo, billingRepo, dbErrorCounts, dbErrorSamples);
+                            dbSavedCount += stats[0];
+                            dbErrorCount += stats[1];
+                            dbBatch.clear();
+                        }
                     } else {
-                        // Запись не удалось исправить - пишем в uncorrected_records.txt
-                        uncorrectedWriter.write(line + " | Ошибка: " + result.errorMessage());
-                        uncorrectedWriter.newLine();
-                        uncorrectedCount++;
+                        invalidCount++;
+                        invalidWriter.write(line + " | Ошибка: " + result.errorMessage());
+                        invalidWriter.newLine();
+
+                        // Исправляем запись и проверяем результат
+                        String correctedLine = correctRecord(line, result.errorMessage());
+                        String errorType = extractErrorType(result.errorMessage());
+                        boolean wasCorrected = isRecordCorrected(correctedLine, errorType);
+
+                        if (wasCorrected) {
+                            // Запись исправлена - пишем в corrected_records.txt
+                            correctedWriter.write(correctedLine);
+                            correctedWriter.newLine();
+                            correctedCount++;
+                            correctedErrorCounts.put(errorType, correctedErrorCounts.getOrDefault(errorType, 0) + 1);
+
+                            // Сохраняем исправленную запись в БД
+                            dbBatch.add(correctedLine);
+                            if (dbBatch.size() >= DB_BATCH_SIZE) {
+                                int[] stats = saveToDatabaseWithStats(dbBatch, addressRepo, accountRepo, billingRepo, dbErrorCounts, dbErrorSamples);
+                                dbSavedCount += stats[0];
+                                dbErrorCount += stats[1];
+                                dbBatch.clear();
+                            }
+                        } else {
+                            // Запись не удалось исправить - пишем в uncorrected_records.txt
+                            uncorrectedWriter.write(line + " | Ошибка: " + result.errorMessage());
+                            uncorrectedWriter.newLine();
+                            uncorrectedCount++;
+                        }
+
+                        // Группировка ошибок по типу
+                        errorCounts.put(errorType, errorCounts.getOrDefault(errorType, 0) + 1);
+
+                        // Сохраняем примеры ошибок (до 5 на каждый тип)
+                        errorSamples.computeIfAbsent(errorType, k -> new ArrayList<>());
+                        if (errorSamples.get(errorType).size() < 5) {
+                            errorSamples.get(errorType).add(line.substring(0, Math.min(150, line.length())));
+                        }
                     }
 
-                    // Группировка ошибок по типу
-                    errorCounts.put(errorType, errorCounts.getOrDefault(errorType, 0) + 1);
-
-                    // Сохраняем примеры ошибок (до 5 на каждый тип)
-                    errorSamples.computeIfAbsent(errorType, k -> new ArrayList<>());
-                    if (errorSamples.get(errorType).size() < 5) {
-                        errorSamples.get(errorType).add(line.substring(0, Math.min(150, line.length())));
+                    if (totalCount % PROGRESS_INTERVAL == 0) {
+                        System.out.printf("Обработано строк: %d, Валидных: %d, Ошибок: %d, Исправлено: %d, Не исправлено: %d, В БД: %d, Ошибок БД: %d%n",
+                                totalCount, validCount, invalidCount, correctedCount, uncorrectedCount, dbSavedCount, dbErrorCount);
                     }
                 }
 
-                if (totalCount % PROGRESS_INTERVAL == 0) {
-                    System.out.printf("Обработано строк: %d, Валидных: %d, Ошибок: %d, Исправлено: %d, Не исправлено: %d%n",
-                            totalCount, validCount, invalidCount, correctedCount, uncorrectedCount);
+                // Сохраняем остаток записей в БД
+                if (!dbBatch.isEmpty()) {
+                    int[] stats = saveToDatabaseWithStats(dbBatch, addressRepo, accountRepo, billingRepo, dbErrorCounts, dbErrorSamples);
+                    dbSavedCount += stats[0];
+                    dbErrorCount += stats[1];
                 }
+            } catch (IOException e) {
+                System.err.println("Ошибка чтения файла: " + e.getMessage());
             }
-        } catch (IOException e) {
-            System.err.println("Ошибка чтения файла: " + e.getMessage());
+        } catch (SQLException e) {
+            System.err.println("Ошибка подключения к базе данных: " + e.getMessage());
+            e.printStackTrace();
+            return; // Завершаем программу при ошибке БД
         }
 
         // Запись отчета с группировкой ошибок
@@ -122,16 +178,54 @@ public class Main {
         double correctedPercent = invalidCount > 0 ? (double) correctedCount / invalidCount * 100 : 0;
         double uncorrectedPercent = invalidCount > 0 ? (double) uncorrectedCount / invalidCount * 100 : 0;
 
+        System.out.println();
         System.out.println("=== Результаты обработки ===");
         System.out.println("Всего обработано записей: " + totalRecords);
         System.out.println("Успешно обработано: " + validCount + " (" + String.format("%.2f", validPercent) + "%)");
         System.out.println("С ошибками: " + invalidCount + " (" + String.format("%.2f", invalidPercent) + "%)");
         System.out.println("Исправлено записей: " + correctedCount + " (" + String.format("%.2f", correctedPercent) + "% от ошибок)");
         System.out.println("Не исправлено записей: " + uncorrectedCount + " (" + String.format("%.2f", uncorrectedPercent) + "% от ошибок)");
+        System.out.println();
         System.out.println("Валидные записи сохранены в файл: " + validFilePath);
         System.out.println("Записи с ошибками сохранены в файл: " + invalidFilePath);
         System.out.println("Исправленные записи сохранены в файл: " + correctedFilePath);
         System.out.println("Неисправленные ошибки сохранены в файл: " + uncorrectedFilePath);
+        System.out.println();
+        System.out.println("=== Статистика базы данных ===");
+        System.out.println("Записей сохранено в базу данных: " + dbSavedCount);
+        System.out.println("Ошибок при сохранении в БД: " + dbErrorCount);
+        System.out.println();
+        System.out.println("Баланс: " + totalRecords + " (всего) - " + uncorrectedCount + " (не исправлено) - " + dbErrorCount + " (ошибки БД) = " + (totalRecords - uncorrectedCount - dbErrorCount));
+        
+        // Вывод статистики по ошибкам БД
+        if (!dbErrorCounts.isEmpty()) {
+            System.out.println();
+            System.out.println("=== Детальная статистика ошибок БД ===");
+            System.out.println("Всего типов ошибок: " + dbErrorCounts.size());
+            System.out.println();
+            
+            // Сортируем ошибки по количеству (убывание)
+            List<Map.Entry<String, Integer>> sortedDbErrors = new ArrayList<>(dbErrorCounts.entrySet());
+            sortedDbErrors.sort((a, b) -> b.getValue().compareTo(a.getValue()));
+            
+            for (Map.Entry<String, Integer> entry : sortedDbErrors) {
+                String errorType = entry.getKey();
+                int count = entry.getValue();
+                double percent = dbErrorCount > 0 ? (double) count / dbErrorCount * 100 : 0;
+                
+                System.out.printf("  %s: %d (%.2f%%)%n", errorType, count, percent);
+                
+                // Вывод примеров
+                List<String> samples = dbErrorSamples.get(errorType);
+                if (samples != null && !samples.isEmpty()) {
+                    System.out.println("    Примеры:");
+                    for (String sample : samples) {
+                        System.out.printf("      - %s%n", sample);
+                    }
+                }
+                System.out.println();
+            }
+        }
     }
 
     /**
@@ -516,10 +610,31 @@ public class Main {
 
         // Если недостаточно полей - пытаемся восстановить
         if (parts.length < 5) {
-            // Проверяем, не является ли parts[1] адресом (содержит запятые и ключевые слова адреса)
-            if (parts.length >= 2 && parts[1].contains(",") && 
-                (parts[1].contains("ул") || parts[1].contains("мкр") || parts[1].contains(" с") || 
-                 parts[1].contains(" п") || parts[1].contains(" г") || parts[1].contains(" дер"))) {
+            // Проверяем, не является ли parts[1] адресом (содержит запятые ИЛИ ключевые слова адреса)
+            boolean isAddressInFioField = false;
+            if (parts.length >= 2) {
+                String field2 = parts[1].trim();
+                // Проверяем наличие запятых
+                if (field2.contains(",")) {
+                    isAddressInFioField = true;
+                }
+                // Проверяем наличие ключевых слов адреса (даже без запятых)
+                else if (field2.matches(".*\\s[сспгдкм]\\.?$") ||  // оканчивается на " с.", " п.", " г." и т.д.
+                         field2.contains(" с ") || field2.contains(" п ") ||
+                         field2.contains(" г ") || field2.contains(" дер") ||
+                         field2.contains("мкр") || field2.contains("р-н")) {
+                    // Поле 2 похоже на населенный пункт, а не на ФИО
+                    // Проверяем, что поле 3 тоже похоже на адрес (содержит улицу и дом)
+                    if (parts.length >= 3) {
+                        String field3 = parts[2].trim();
+                        if (field3.contains("ул") || field3.matches(".*\\d+.*")) {
+                            isAddressInFioField = true;
+                        }
+                    }
+                }
+            }
+
+            if (isAddressInFioField) {
                 // ФИО отсутствует, адрес на месте ФИО - вставляем "данные отсутствуют" и сдвигаем поля
                 String[] newParts = new String[parts.length + 1];
                 newParts[0] = parts[0]; // номер счета
@@ -534,6 +649,21 @@ public class Main {
                     newParts[parts.length] = "";
                     parts = newParts;
                 }
+            }
+        }
+        // Если 5+ полей, но ошибка "Неполный адрес" - проверяем, не является ли поле 1 адресом
+        else if (parts.length >= 5 && errorMessage.contains("Неполный адрес")) {
+            String field2 = parts[1].trim();
+            // Проверяем, похоже ли поле 2 на населенный пункт (есть " с", " п", " г", "р-н" и т.д.)
+            if (field2.contains(" с ") || field2.contains(" п ") || field2.contains(" г ") ||
+                field2.contains(" дер") || field2.contains("мкр") || field2.contains("р-н") ||
+                field2.matches(".*\\s[сспгдкм]\\.?$")) {
+                // Поле 2 - это населенный пункт, а не ФИО! Вставляем "данные отсутствуют"
+                String[] newParts = new String[parts.length + 1];
+                newParts[0] = parts[0]; // номер счета
+                newParts[1] = "данные отсутствуют"; // ФИО
+                System.arraycopy(parts, 1, newParts, 2, parts.length - 1); // сдвигаем все поля
+                parts = newParts;
             }
         }
 
@@ -564,20 +694,31 @@ public class Main {
                 else if (commaCount == 1) {
                     parts[2] = locality + ", " + street + ", Дом не указан, Квартира не указана";
                 }
-                // Если 2 запятые (3 части) - это населенный пункт, ?, ?
-                // Определяем, что является чем:
-                // Если 3-я часть число → это квартира, 2-я часть → дом, улицы нет
-                // Если 3-я часть не число → это дом, 2-я часть → улица, квартиры нет
+                // Если 2 запятые (3 части) - определяем структуру
                 else if (commaCount == 2) {
+                    String part1 = addressParts[0].trim();
                     String part2 = addressParts[1].trim();
                     String part3 = addressParts[2].trim();
-                    
-                    if (part3.matches("^\\d+$")) {
-                        // 3-я часть - квартира (число), 2-я - дом, улицы нет
-                        parts[2] = locality + ", Улица не указана, " + part2 + ", " + part3;
+
+                    // Проверяем, является ли первая часть населенным пунктом
+                    boolean isFirstPartLocality = part1.matches(".*\\s[сспгдкм]\\.?$") ||
+                                                  part1.contains(" с ") || part1.contains(" п ") ||
+                                                  part1.contains(" г ") || part1.contains(" дер") ||
+                                                  part1.contains("мкр") || part1.contains("р-н");
+
+                    if (isFirstPartLocality) {
+                        // Первая часть - населенный пункт
+                        if (part3.matches("^\\d+$")) {
+                            // 3-я часть - квартира (число), 2-я - дом, улицы нет
+                            parts[2] = part1 + ", Улица не указана, " + part2 + ", " + part3;
+                        } else {
+                            // 3-я часть - дом (не число), 2-я - улица, квартиры нет
+                            parts[2] = part1 + ", " + part2 + ", " + part3 + ", Квартира не указана";
+                        }
                     } else {
-                        // 3-я часть - дом (не число), 2-я - улица, квартиры нет
-                        parts[2] = locality + ", " + part2 + ", " + part3 + ", Квартира не указана";
+                        // Первая часть - это улица (населенный пункт был в поле 1)
+                        // Значит у нас: улица, дом, квартира
+                        parts[2] = "Населенный пункт не указан, " + part1 + ", " + part2 + ", " + part3;
                     }
                 }
             }
@@ -665,5 +806,155 @@ public class Main {
         }
 
         return result.toString();
+    }
+
+    /**
+     * Извлекает тип ошибки БД из сообщения.
+     */
+    private static String extractDbErrorType(String errorMessage) {
+        if (errorMessage == null) {
+            return "Неизвестная ошибка";
+        }
+        
+        // Невалидная запись
+        if (errorMessage.contains("Невозможно сохранить невалидную запись")) {
+            return "Невалидная запись после исправления";
+        }
+        
+        // Ошибки размера поля
+        if (errorMessage.contains("значение не умещается в тип")) {
+            if (errorMessage.contains("character varying(20)")) {
+                return "Превышение размера поля (VARCHAR(20))";
+            } else if (errorMessage.contains("character varying")) {
+                return "Превышение размера поля (VARCHAR)";
+            }
+        }
+        
+        // Ошибки уникальности
+        if (errorMessage.contains("UNIQUE")) {
+            return "Нарушение уникальности";
+        }
+        
+        // Ошибки внешних ключей
+        if (errorMessage.contains("foreign key")) {
+            return "Нарушение внешнего ключа";
+        }
+        
+        // Ошибки NULL
+        if (errorMessage.contains("null")) {
+            return "NULL значение в обязательном поле";
+        }
+        
+        // Ошибки типа данных
+        if (errorMessage.contains("type") || errorMessage.contains("тип")) {
+            return "Ошибка типа данных";
+        }
+        
+        // Всё остальное
+        return "Другая ошибка: " + errorMessage.substring(0, Math.min(50, errorMessage.length()));
+    }
+
+    /**
+     * Сохранение пакета записей в базу данных.
+     * @return массив из двух чисел: [количество успешно сохраненных, количество ошибок]
+     */
+    private static int[] saveToDatabaseWithStats(List<String> records,
+                                       AddressRepository addressRepo,
+                                       AccountRepository accountRepo,
+                                       BillingRepository billingRepo,
+                                       Map<String, Integer> dbErrorCounts,
+                                       Map<String, List<String>> dbErrorSamples) {
+        int savedCount = 0;
+        int errorCount = 0;
+        for (String line : records) {
+            try {
+                saveRecordToDatabase(line, addressRepo, accountRepo, billingRepo);
+                savedCount++;
+            } catch (Exception e) {
+                errorCount++;
+                String errorMsg = e.getMessage();
+                
+                // Извлекаем тип ошибки
+                String errorType = extractDbErrorType(errorMsg);
+                dbErrorCounts.put(errorType, dbErrorCounts.getOrDefault(errorType, 0) + 1);
+                
+                // Сохраняем примеры (до 5 на каждый тип)
+                dbErrorSamples.computeIfAbsent(errorType, k -> new ArrayList<>());
+                if (dbErrorSamples.get(errorType).size() < 5) {
+                    dbErrorSamples.get(errorType).add(line.substring(0, Math.min(150, line.length())));
+                }
+                
+                System.err.println("Ошибка сохранения записи в БД: " + errorMsg);
+                System.err.println("Запись: " + line);
+            }
+        }
+        if (errorCount > 0) {
+            System.out.printf("   [БД] Сохранено: %d, Ошибок: %d%n", savedCount, errorCount);
+        }
+        return new int[]{savedCount, errorCount};
+    }
+
+    /**
+     * Сохранение одной записи в базу данных.
+     */
+    private static void saveRecordToDatabase(String line,
+                                              AddressRepository addressRepo,
+                                              AccountRepository accountRepo,
+                                              BillingRepository billingRepo) throws SQLException {
+        ParseResult result = parseRecord(line);
+        if (!result.isValid() || result.recordData() == null) {
+            throw new SQLException("Невозможно сохранить невалидную запись");
+        }
+
+        RecordData data = result.recordData();
+
+        // 1. Сохраняем адрес и получаем ID квартиры
+        Map<String, Object> address = data.address();
+        String locality = (String) address.get("locality");
+        String street = (String) address.get("street");
+        String house = (String) address.get("house");
+        List<String> apartments = (List<String>) address.get("apartments");
+        String apartment = apartments != null && !apartments.isEmpty() 
+            ? String.join(" ", apartments) 
+            : "0";
+
+        int apartmentId = addressRepo.getOrCreateAddress(locality, street, house, apartment);
+
+        // 2. Сохраняем лицевой счет и получаем его ID
+        int accountId = accountRepo.createOrUpdateAccount(data.accountNumber(), data.payerName(), apartmentId);
+
+        // 3. Сохраняем период начисления
+        String period = data.billingPeriod();
+        double totalAmount = 0.0;
+        
+        // Суммируем суммы из всех начислений
+        for (Map<String, Object> charge : data.charges()) {
+            Object amountObj = charge.get("amount");
+            if (amountObj instanceof Double) {
+                totalAmount += (Double) amountObj;
+            }
+        }
+
+        int billingPeriodId = billingRepo.createOrUpdateBillingPeriod(accountId, period, totalAmount);
+
+        // 4. Сохраняем начисления по приборам учета
+        // Теперь передаем accountId и period вместо billingPeriodId
+        List<BillingRepository.MeterCharge> meterCharges = new ArrayList<>();
+        for (Map<String, Object> charge : data.charges()) {
+            String meter = (String) charge.get("meter");
+            Object readingObj = charge.get("meterReading");
+            Object amountObj = charge.get("amount");
+
+            Double reading = readingObj instanceof Double ? (Double) readingObj : null;
+            Double amount = amountObj instanceof Double ? (Double) amountObj : null;
+
+            if (meter != null && !meter.isEmpty()) {
+                meterCharges.add(new BillingRepository.MeterCharge(meter, reading, amount));
+            }
+        }
+
+        if (!meterCharges.isEmpty()) {
+            billingRepo.addMeterCharges(accountId, period, meterCharges);
+        }
     }
 }
