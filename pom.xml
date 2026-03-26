@@ -17,32 +17,35 @@
     </properties>
 
     <dependencies>
-        <!-- SLF4J для логирования -->
+        <!-- Source: https://mvnrepository.com/artifact/org.slf4j/slf4j-simple -->
         <dependency>
             <groupId>org.slf4j</groupId>
             <artifactId>slf4j-simple</artifactId>
-            <version>2.0.9</version>
+            <version>2.0.17</version>
+            <scope>test</scope>
         </dependency>
 
-        <!-- PostgreSQL JDBC драйвер -->
+        <!-- Source: https://mvnrepository.com/artifact/org.postgresql/postgresql -->
         <dependency>
             <groupId>org.postgresql</groupId>
             <artifactId>postgresql</artifactId>
-            <version>42.7.4</version>
+            <version>42.7.10</version>
+            <scope>compile</scope>
         </dependency>
 
-        <!-- HikariCP - пул соединений -->
+        <!-- Source: https://mvnrepository.com/artifact/com.zaxxer/HikariCP -->
         <dependency>
             <groupId>com.zaxxer</groupId>
             <artifactId>HikariCP</artifactId>
-            <version>5.1.0</version>
+            <version>7.0.2</version>
+            <scope>compile</scope>
         </dependency>
 
-        <!-- JUnit 5 для тестов -->
+        <!-- Source: https://mvnrepository.com/artifact/org.junit.jupiter/junit-jupiter-api -->
         <dependency>
             <groupId>org.junit.jupiter</groupId>
-            <artifactId>junit-jupiter</artifactId>
-            <version>5.10.0</version>
+            <artifactId>junit-jupiter-api</artifactId>
+            <version>6.0.3</version>
             <scope>test</scope>
         </dependency>
     </dependencies>
@@ -54,10 +57,26 @@
                 <artifactId>maven-compiler-plugin</artifactId>
                 <version>3.15.0</version>
             </plugin>
+
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
-                <version>3.1.2</version>
+                <version>3.5.5</version>
+            </plugin>
+
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>exec-maven-plugin</artifactId>
+                <version>3.1.0</version>
+                <configuration>
+                    <executable>java</executable>
+                    <arguments>
+                        <argument>-Dfile.encoding=UTF-8</argument>
+                        <argument>-classpath</argument>
+                    <classpath />
+                        <argument>${exec.mainClass}</argument>
+                    </arguments>
+                </configuration>
             </plugin>
         </plugins>
     </build>
