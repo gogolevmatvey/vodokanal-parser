@@ -1,9 +1,8 @@
-/**# Исключение для случаев, когда сущность не найдена
 package org.example.exception;
 
 /**
  * Исключение, возникающее когда сущность не найдена
-
+ */
 public class NotFoundException extends RuntimeException {
     
     public NotFoundException(String message) {
@@ -14,4 +13,3 @@ public class NotFoundException extends RuntimeException {
         super(message, cause);
     }
 }
- */

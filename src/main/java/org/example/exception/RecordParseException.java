@@ -1,9 +1,8 @@
-/**# Исключения для парсинга записей
 package org.example.exception;
 
 /**
  * Исключение, возникающее при ошибке парсинга записи
-
+ */
 public class RecordParseException extends RuntimeException {
     
     public RecordParseException(String message) {
@@ -14,4 +13,3 @@ public class RecordParseException extends RuntimeException {
         super(message, cause);
     }
 }
- */

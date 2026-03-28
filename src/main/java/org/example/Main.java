@@ -1,5 +1,33 @@
 package org.example;
 
+import org.example.parser.model.ParseResult;
+import org.example.parser.model.ParsedRecord;
+import org.example.parser.model.Address;
+import org.example.parser.model.Locality;
+import org.example.parser.model.Street;
+import org.example.parser.model.House;
+import org.example.parser.model.Apartment;
+import org.example.parser.model.Account;
+import org.example.parser.model.BillingPeriod;
+import org.example.parser.model.MeterCharge;
+import org.example.service.RecordParser;
+import org.example.service.RecordCorrector;
+import org.example.service.SearchService;
+import org.example.repository.impl.JdbcLocalityRepository;
+import org.example.repository.impl.JdbcStreetRepository;
+import org.example.repository.impl.JdbcHouseRepository;
+import org.example.repository.impl.JdbcApartmentRepository;
+import org.example.repository.impl.JdbcAccountRepository;
+import org.example.repository.impl.JdbcBillingPeriodRepository;
+import org.example.repository.impl.JdbcMeterChargeRepository;
+import org.example.repository.LocalityRepository;
+import org.example.repository.StreetRepository;
+import org.example.repository.HouseRepository;
+import org.example.repository.ApartmentRepository;
+import org.example.repository.AccountRepository;
+import org.example.repository.BillingPeriodRepository;
+import org.example.repository.MeterChargeRepository;
+
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.nio.charset.Charset;
@@ -21,12 +49,19 @@ public class Main {
     private static final int DB_BATCH_SIZE = 500;
 
     public static void main(String[] args) {
-        String filePath = "Testovye_dannye (1).txt";
-        String validFilePath = "valid_records.txt";
-        String invalidFilePath = "invalid_records.txt";
-        String errorReportPath = "error_report.txt";
-        String correctedFilePath = "corrected_records.txt";
-        String uncorrectedFilePath = "uncorrected_records.txt";
+        // Загружаем конфигурацию
+        ConfigManager config = ConfigManager.getInstance();
+
+        String filePath = config.getFileInput();
+        String validFilePath = config.getFileOutputValid();
+        String invalidFilePath = config.getFileOutputInvalid();
+        String errorReportPath = config.getFileOutputErrorReport();
+        String correctedFilePath = config.getFileOutputCorrected();
+        String uncorrectedFilePath = config.getFileOutputUncorrected();
+
+        // Создаем сервисы
+        RecordParser parser = new RecordParser();
+        RecordCorrector corrector = new RecordCorrector();
 
         int validCount = 0;
         int invalidCount = 0;
@@ -45,18 +80,21 @@ public class Main {
         Map<String, Integer> dbErrorCounts = new TreeMap<>();
         Map<String, List<String>> dbErrorSamples = new HashMap<>();
 
-        // Инициализация БД
+        // Подключение к базе данных
         System.out.println("Подключение к базе данных PostgreSQL...");
         try (DatabaseManager dbManager = new DatabaseManager()) {
-            dbManager.initializeDatabase();
-            
-            AddressRepository addressRepo = new AddressRepository(dbManager);
-            AccountRepository accountRepo = new AccountRepository(dbManager);
-            BillingRepository billingRepo = new BillingRepository(dbManager);
-            
-            addressRepo.init();
-            accountRepo.init();
-            billingRepo.init();
+
+            // Создаем репозитории
+            LocalityRepository localityRepo = new JdbcLocalityRepository(dbManager.getDataSource());
+            StreetRepository streetRepo = new JdbcStreetRepository(dbManager.getDataSource());
+            HouseRepository houseRepo = new JdbcHouseRepository(dbManager.getDataSource());
+            ApartmentRepository apartmentRepo = new JdbcApartmentRepository(dbManager.getDataSource());
+            AccountRepository accountRepo = new JdbcAccountRepository(dbManager.getDataSource());
+            BillingPeriodRepository billingPeriodRepo = new JdbcBillingPeriodRepository(dbManager.getDataSource());
+            MeterChargeRepository meterChargeRepo = new JdbcMeterChargeRepository(dbManager.getDataSource());
+
+            // Создаем сервисы
+            SearchService searchService = new SearchService(localityRepo, streetRepo, houseRepo, apartmentRepo, accountRepo);
 
             System.out.println("База данных готова к работе.");
             System.out.println();
@@ -90,7 +128,7 @@ public class Main {
 
                     totalCount++;
 
-                    ParseResult result = parseRecord(line);
+                    ParseResult result = parser.parse(line);
 
                     if (result.isValid()) {
                         validCount++;
@@ -100,19 +138,19 @@ public class Main {
                         // Сохраняем в БД
                         dbBatch.add(line);
                         if (dbBatch.size() >= DB_BATCH_SIZE) {
-                            int[] stats = saveToDatabaseWithStats(dbBatch, addressRepo, accountRepo, billingRepo, dbErrorCounts, dbErrorSamples);
+                            int[] stats = saveToDatabaseWithStats(dbBatch, localityRepo, streetRepo, houseRepo, apartmentRepo, accountRepo, billingPeriodRepo, meterChargeRepo, dbErrorCounts, dbErrorSamples, parser);
                             dbSavedCount += stats[0];
                             dbErrorCount += stats[1];
                             dbBatch.clear();
                         }
                     } else {
                         invalidCount++;
-                        invalidWriter.write(line + " | Ошибка: " + result.errorMessage());
+                        invalidWriter.write(line + " | Ошибка: " + result.getErrorMessage());
                         invalidWriter.newLine();
 
                         // Исправляем запись и проверяем результат
-                        String correctedLine = correctRecord(line, result.errorMessage());
-                        String errorType = extractErrorType(result.errorMessage());
+                        String correctedLine = corrector.correct(line, result.getErrorMessage());
+                        String errorType = extractErrorType(result.getErrorMessage());
                         boolean wasCorrected = isRecordCorrected(correctedLine, errorType);
 
                         if (wasCorrected) {
@@ -125,14 +163,14 @@ public class Main {
                             // Сохраняем исправленную запись в БД
                             dbBatch.add(correctedLine);
                             if (dbBatch.size() >= DB_BATCH_SIZE) {
-                                int[] stats = saveToDatabaseWithStats(dbBatch, addressRepo, accountRepo, billingRepo, dbErrorCounts, dbErrorSamples);
+                                int[] stats = saveToDatabaseWithStats(dbBatch, localityRepo, streetRepo, houseRepo, apartmentRepo, accountRepo, billingPeriodRepo, meterChargeRepo, dbErrorCounts, dbErrorSamples, parser);
                                 dbSavedCount += stats[0];
                                 dbErrorCount += stats[1];
                                 dbBatch.clear();
                             }
                         } else {
                             // Запись не удалось исправить - пишем в uncorrected_records.txt
-                            uncorrectedWriter.write(line + " | Ошибка: " + result.errorMessage());
+                            uncorrectedWriter.write(line + " | Ошибка: " + result.getErrorMessage());
                             uncorrectedWriter.newLine();
                             uncorrectedCount++;
                         }
@@ -155,17 +193,13 @@ public class Main {
 
                 // Сохраняем остаток записей в БД
                 if (!dbBatch.isEmpty()) {
-                    int[] stats = saveToDatabaseWithStats(dbBatch, addressRepo, accountRepo, billingRepo, dbErrorCounts, dbErrorSamples);
+                    int[] stats = saveToDatabaseWithStats(dbBatch, localityRepo, streetRepo, houseRepo, apartmentRepo, accountRepo, billingPeriodRepo, meterChargeRepo, dbErrorCounts, dbErrorSamples, parser);
                     dbSavedCount += stats[0];
                     dbErrorCount += stats[1];
                 }
             } catch (IOException e) {
                 System.err.println("Ошибка чтения файла: " + e.getMessage());
             }
-        } catch (SQLException e) {
-            System.err.println("Ошибка подключения к базе данных: " + e.getMessage());
-            e.printStackTrace();
-            return; // Завершаем программу при ошибке БД
         }
 
         // Запись отчета с группировкой ошибок
@@ -229,11 +263,6 @@ public class Main {
     }
 
     /**
-     * Результат парсинга записи
-     */
-    private record ParseResult(boolean isValid, String errorMessage, RecordData recordData) {}
-
-    /**
      * Данные из валидной записи
      */
     private record RecordData(
@@ -243,188 +272,6 @@ public class Main {
             String billingPeriod,
             List<Map<String, Object>> charges
     ) {}
-
-    /**
-     * Парсит одну строку данных
-     */
-    private static ParseResult parseRecord(String line) {
-        try {
-
-            String[] parts = line.split(";");
-
-            // Проверяем минимальное количество частей
-            if (parts.length < 5) {
-                return new ParseResult(false, "Недостаточно полей в строке", null);
-            }
-
-            // 1. Номер лицевого счета
-            String accountNumber = parts[0].trim();
-            if (accountNumber.isEmpty()) {
-                return new ParseResult(false, "Пустой номер лицевого счета", null);
-            }
-            if (!accountNumber.matches("^\\d+$")) {
-                return new ParseResult(false, "Неверный формат номера лицевого счета", null);
-            }
-
-            // 2. ФИО плательщика - должно быть обязательно
-            String payerName = parts[1].trim();
-            if (payerName.isEmpty() || payerName.matches("\\s*") || payerName.equals(".*") || payerName.matches("^[.\\*\\s\\d]+$")) {
-                return new ParseResult(false, "Пустое ФИО плательщика", null);
-            }
-
-            // 3. Адрес (разделенный запятыми)
-            String addressStr = parts[2].trim();
-            if (addressStr.isEmpty()) {
-                return new ParseResult(false, "Пустой адрес", null);
-            }
-
-            // Проверка на минимальное количество запятых (минимум 3)
-            int commaCount = countChar(addressStr, ',');
-            if (commaCount < 3) {
-                return new ParseResult(false, "Неполный адрес (меньше 3 запятых)", null);
-            }
-
-            // Проверка на подозрительный адрес (больше 5 запятых)
-            if (commaCount > 5) {
-                return new ParseResult(false, "Подозрительный адрес (больше 5 запятых)", null);
-            }
-
-            String[] addressParts = addressStr.split(",");
-
-            // Проверка на пустые части адреса
-            for (int i = 0; i < Math.min(3, addressParts.length); i++) {
-                if (addressParts[i].trim().isEmpty()) {
-                    return new ParseResult(false, "Пустая часть адреса", null);
-                }
-            }
-
-            String locality = addressParts[0].trim();
-            String street = addressParts[1].trim();
-            String house = addressParts[2].trim();
-
-            // Квартиры (если есть) - начиная с 4-й части адреса
-            List<String> apartments = new ArrayList<>();
-            for (int i = 3; i < addressParts.length; i++) {
-                String apt = addressParts[i].trim();
-                if (!apt.isEmpty()) {
-                    apartments.add(apt);
-                }
-            }
-
-            Map<String, Object> addressDoc = new HashMap<>();
-            addressDoc.put("locality", locality);
-            addressDoc.put("street", street);
-            addressDoc.put("house", house);
-            addressDoc.put("apartments", apartments);
-
-            // 4. Период начисления
-            String billingPeriod = parts[3].trim();
-            if (billingPeriod.isEmpty()) {
-                return new ParseResult(false, "Пустой период начисления", null);
-            }
-            // Проверка формата периода (число или текстовый месяц)
-            if (!billingPeriod.matches("^\\d{2,4}$") && isTextualMonth(billingPeriod)) {
-                return new ParseResult(false, "Период в текстовом формате", null);
-            }
-
-            // 5. Суммы начисления, приборы учета и показания
-            List<Map<String, Object>> charges = new ArrayList<>();
-
-            // Если в строке 5 частей - это простой случай (только сумма)
-            if (parts.length == 5) {
-                try {
-                    double amount = Double.parseDouble(parts[4].trim());
-                    Map<String, Object> charge = new HashMap<>();
-                    charge.put("amount", amount);
-                    charge.put("meter", null);
-                    charge.put("meterReading", null);
-                    charges.add(charge);
-                } catch (NumberFormatException e) {
-                    return new ParseResult(false, "Неверный формат суммы начисления: " + parts[4], null);
-                }
-            }
-            // Иначе обрабатываем: первая сумма, затем пары (прибор, показания)
-            else {
-                try {
-                    // Первое поле после периода - это сумма
-                    double amount = Double.parseDouble(parts[4].trim());
-
-                    // Собираем все приборы и показания
-                    List<String> meters = new ArrayList<>();
-                    List<Double> readings = new ArrayList<>();
-
-                    for (int i = 5; i < parts.length; i += 2) {
-                        String meter = parts[i].trim();
-                        if (meter.isEmpty()) {
-                            meter = null;
-                        } else if (!isValidMeterOrReading(meter)) {
-                            // Проверяем, не является ли это текстовым месяцем
-                            if (isTextualMonth(meter)) {
-                                return new ParseResult(false, "Текстовый месяц в поле данных: " + meter, null);
-                            }
-                            // Подозрительное значение прибора
-                            return new ParseResult(false, "Подозрительное значение прибора учета: " + meter, null);
-                        }
-
-                        Double reading = null;
-                        if (i + 1 < parts.length) {
-                            String readingStr = parts[i + 1].trim();
-                            if (!readingStr.isEmpty()) {
-                                // Проверяем, не является ли показание текстовым месяцем
-                                if (isTextualMonth(readingStr)) {
-                                    return new ParseResult(false, "Текстовый месяц в поле показаний: " + readingStr, null);
-                                }
-                                if (!isValidMeterOrReading(readingStr)) {
-                                    return new ParseResult(false, "Неверный формат показаний: " + readingStr, null);
-                                }
-                                try {
-                                    reading = Double.parseDouble(readingStr);
-                                } catch (NumberFormatException e) {
-                                    return new ParseResult(false, "Неверный формат показаний: " + readingStr, null);
-                                }
-                            }
-                        }
-
-                        meters.add(meter);
-                        readings.add(reading);
-                    }
-
-                    // Если есть приборы - создаем запись для каждого
-                    if (!meters.isEmpty()) {
-                        for (int i = 0; i < meters.size(); i++) {
-                            Map<String, Object> charge = new HashMap<>();
-                            charge.put("amount", amount);
-                            charge.put("meter", meters.get(i));
-                            charge.put("meterReading", readings.get(i));
-                            charges.add(charge);
-                        }
-                    } else {
-                        // Нет приборов - просто сумма
-                        Map<String, Object> charge = new HashMap<>();
-                        charge.put("amount", amount);
-                        charge.put("meter", null);
-                        charge.put("meterReading", null);
-                        charges.add(charge);
-                    }
-                } catch (NumberFormatException e) {
-                    return new ParseResult(false, "Неверный формат суммы начисления: " + parts[4], null);
-                }
-            }
-
-            RecordData recordData = new RecordData(
-                    accountNumber,
-                    payerName,
-                    addressDoc,
-                    billingPeriod,
-                    charges
-            );
-
-            return new ParseResult(true, null, recordData);
-
-        } catch (Exception e) {
-            return new ParseResult(false, "Ошибка парсинга строки: " + e.getMessage(), null);
-        }
-    }
 
     /**
      * Проверяет, является ли значение допустимым для прибора учета или показаний
@@ -603,229 +450,6 @@ public class Main {
     }
 
     /**
-     * Исправляет ошибочную запись согласно правилам из zadanie.txt
-     */
-    private static String correctRecord(String line, String errorMessage) {
-        String[] parts = line.split(";");
-
-        // Если недостаточно полей - пытаемся восстановить
-        if (parts.length < 5) {
-            // Проверяем, не является ли parts[1] адресом (содержит запятые ИЛИ ключевые слова адреса)
-            boolean isAddressInFioField = false;
-            if (parts.length >= 2) {
-                String field2 = parts[1].trim();
-                // Проверяем наличие запятых
-                if (field2.contains(",")) {
-                    isAddressInFioField = true;
-                }
-                // Проверяем наличие ключевых слов адреса (даже без запятых)
-                else if (field2.matches(".*\\s[сспгдкм]\\.?$") ||  // оканчивается на " с.", " п.", " г." и т.д.
-                         field2.contains(" с ") || field2.contains(" п ") ||
-                         field2.contains(" г ") || field2.contains(" дер") ||
-                         field2.contains("мкр") || field2.contains("р-н")) {
-                    // Поле 2 похоже на населенный пункт, а не на ФИО
-                    // Проверяем, что поле 3 тоже похоже на адрес (содержит улицу и дом)
-                    if (parts.length >= 3) {
-                        String field3 = parts[2].trim();
-                        if (field3.contains("ул") || field3.matches(".*\\d+.*")) {
-                            isAddressInFioField = true;
-                        }
-                    }
-                }
-            }
-
-            if (isAddressInFioField) {
-                // ФИО отсутствует, адрес на месте ФИО - вставляем "данные отсутствуют" и сдвигаем поля
-                String[] newParts = new String[parts.length + 1];
-                newParts[0] = parts[0]; // номер счета
-                newParts[1] = "данные отсутствуют"; // ФИО
-                System.arraycopy(parts, 1, newParts, 2, parts.length - 1); // сдвигаем остальные поля
-                parts = newParts;
-            } else {
-                // Просто добавляем недостающие поля в конец
-                while (parts.length < 5) {
-                    String[] newParts = new String[parts.length + 1];
-                    System.arraycopy(parts, 0, newParts, 0, parts.length);
-                    newParts[parts.length] = "";
-                    parts = newParts;
-                }
-            }
-        }
-        // Если 5+ полей, но ошибка "Неполный адрес" - проверяем, не является ли поле 1 адресом
-        else if (parts.length >= 5 && errorMessage.contains("Неполный адрес")) {
-            String field2 = parts[1].trim();
-            // Проверяем, похоже ли поле 2 на населенный пункт (есть " с", " п", " г", "р-н" и т.д.)
-            // ИЛИ если поле 2 содержит 3+ запятые (полный адрес)
-            int commaCount = countChar(field2, ',');
-            if (field2.contains(" с ") || field2.contains(" п ") || field2.contains(" г ") ||
-                field2.contains(" дер") || field2.contains("мкр") || field2.contains("р-н") ||
-                field2.matches(".*\\s[сспгдкм]\\.?$") ||
-                commaCount >= 3) {  // 3+ запятые = полный адрес (населенный пункт, улица, дом, квартира)
-                // Поле 2 - это адрес, а не ФИО! Вставляем "данные отсутствуют"
-                String[] newParts = new String[parts.length + 1];
-                newParts[0] = parts[0]; // номер счета
-                newParts[1] = "данные отсутствуют"; // ФИО
-                System.arraycopy(parts, 1, newParts, 2, parts.length - 1); // сдвигаем все поля
-                parts = newParts;
-            }
-        }
-
-        // 1. Исправление ФИО (если полностью пустое или маскированное)
-        String payerName = parts[1].trim();
-        if (payerName.isEmpty() ||
-            payerName.equals(".*") ||
-            payerName.equals(".") ||  // одна точка
-            payerName.matches("^[\\s*]+$") ||   // только звёздочки и пробелы ("* * *")
-            payerName.matches("^\\d\\s+\\*\\s+\\*$") ||  // "1 * *", "4 * *" и т.д.
-            payerName.matches("^\\d\\s+\\*+\\s+\\*\\s+\\*$") ||  // "3 ************** * *" и т.д.
-            payerName.matches("^[.\\s]+\\*\\s+\\*$") ||  // ". * *" и т.д.
-            payerName.matches("^[.\\s]+\\*$") ||  // ". *" и т.д.
-            payerName.matches("^\\d+\\*+\\s+\\*+\\s+\\*+$") ||  // "2******* ****** **************" и т.д.
-            payerName.matches("^\\d+\\s+\\*+\\s+\\*+$") ||  // "5 ******* ************" и т.д.
-            payerName.matches("^[.]+\\*+([\\s]+\\*+)+$") ||  // ".****** ******** ***" и т.д.
-            payerName.matches("^\\d+\\s+\\*+$") ||  // "1 ***********" и т.д.
-            payerName.matches("^\\d+\\*+([\\s]+\\*+)+$") ||  // "3********* *********** ** ** *" и т.д.
-            payerName.matches("^[.\\s*]+$") ||  // ".**  ", ".  *******" и т.д.
-            payerName.matches("^\\d+\\*+$")) {  // "2**" и т.д.
-            parts[1] = "данные отсутствуют";
-        }
-        // Все остальные варианты оставляем как есть
-
-        // 2. Исправление адреса
-        if (parts.length > 2) {
-            String addressStr = parts[2].trim();
-            String[] addressParts = addressStr.split(",");
-            int commaCount = countChar(addressStr, ',');
-
-            // Если меньше 3 запятых - исправляем, добавляя недостающие части
-            if (commaCount < 3) {
-                String locality = addressParts.length > 0 ? addressParts[0].trim() : "Населенный пункт не указан";
-                String street = addressParts.length > 1 ? addressParts[1].trim() : "Улица не указана";
-                String house = addressParts.length > 2 ? addressParts[2].trim() : "Дом не указан";
-
-                // Если всего 1 часть (0 запятых) - это населенный пункт
-                if (commaCount == 0) {
-                    parts[2] = locality + ", Улица не указана, Дом не указан, Квартира не указана";
-                }
-                // Если 1 запятая (2 части) - это населенный пункт и улица
-                else if (commaCount == 1) {
-                    parts[2] = locality + ", " + street + ", Дом не указан, Квартира не указана";
-                }
-                // Если 2 запятые (3 части) - определяем структуру
-                else if (commaCount == 2) {
-                    String part1 = addressParts[0].trim();
-                    String part2 = addressParts[1].trim();
-                    String part3 = addressParts[2].trim();
-
-                    // Проверяем, является ли первая часть населенным пунктом
-                    boolean isFirstPartLocality = part1.matches(".*\\s[сспгдкм]\\.?$") ||
-                                                  part1.contains(" с ") || part1.contains(" п ") ||
-                                                  part1.contains(" г ") || part1.contains(" дер") ||
-                                                  part1.contains("мкр") || part1.contains("р-н");
-
-                    if (isFirstPartLocality) {
-                        // Первая часть - населенный пункт
-                        if (part3.matches("^\\d+$")) {
-                            // 3-я часть - квартира (число), 2-я - дом, улицы нет
-                            parts[2] = part1 + ", Улица не указана, " + part2 + ", " + part3;
-                        } else {
-                            // 3-я часть - дом (не число), 2-я - улица, квартиры нет
-                            parts[2] = part1 + ", " + part2 + ", " + part3 + ", Квартира не указана";
-                        }
-                    } else {
-                        // Первая часть - это улица (населенный пункт был в поле 1)
-                        // Значит у нас: улица, дом, квартира
-                        parts[2] = "Населенный пункт не указан, " + part1 + ", " + part2 + ", " + part3;
-                    }
-                }
-            }
-            // Если больше 3 запятых (больше 4 частей) - сливаем лишние квартиры
-            else if (commaCount > 3) {
-                // Первые 3 части: населенный пункт, улица, дом
-                String locality = addressParts[0].trim();
-                String street = addressParts[1].trim();
-                String house = addressParts[2].trim();
-
-                // Объединяем все квартиры в одно поле через пробел (чтобы уменьшить количество запятых)
-                StringBuilder apartmentBuilder = new StringBuilder();
-                for (int i = 3; i < addressParts.length; i++) {
-                    if (apartmentBuilder.length() > 0) {
-                        apartmentBuilder.append(" ");
-                    }
-                    apartmentBuilder.append(addressParts[i].trim());
-                }
-                String apartment = apartmentBuilder.toString();
-
-                parts[2] = locality + ", " + street + ", " + house + ", " + apartment;
-            }
-            // Если после дома несколько полей (4 части всего) - сливаем в одно
-            else if (addressParts.length == 4) {
-                // Проверяем, не является ли 4-я часть продолжением адреса
-                String part4 = addressParts[3].trim();
-                if (!part4.isEmpty() && !part4.matches("^\\d+$")) {
-                    // Сливаем квартиру с дополнительными полями
-                    StringBuilder apartmentBuilder = new StringBuilder(addressParts[2].trim());
-                    for (int i = 3; i < addressParts.length; i++) {
-                        apartmentBuilder.append(" ").append(addressParts[i].trim());
-                    }
-                    parts[2] = addressParts[0].trim() + ", " + addressParts[1].trim() + ", " +
-                               addressParts[2].trim() + ", " + apartmentBuilder.toString().substring(addressParts[2].trim().length()).trim();
-                }
-            }
-        }
-
-        // 3. Исправление периода начисления
-        if (parts.length > 3) {
-            String billingPeriod = parts[3].trim();
-            if (billingPeriod.isEmpty() || isTextualMonth(billingPeriod) || !billingPeriod.matches("^\\d+$")) {
-                parts[3] = "0";
-            }
-        }
-
-        // 4. Исправление суммы начисления
-        if (parts.length > 4) {
-            String amountStr = parts[4].trim();
-            if (amountStr.isEmpty() || isTextualMonth(amountStr)) {
-                parts[4] = "0";
-            } else {
-                try {
-                    double amount = Double.parseDouble(amountStr);
-                    if (amount < 0) {
-                        // Отрицательная сумма - это перерасчет, оставляем как есть
-                    }
-                } catch (NumberFormatException e) {
-                    parts[4] = "0";
-                }
-            }
-        }
-
-        // 5. Исправление приборов учета и показаний
-        for (int i = 5; i < parts.length; i += 2) {
-            String meter = parts[i].trim();
-            String reading = (i + 1 < parts.length) ? parts[i + 1].trim() : "";
-
-            // Исправление показаний
-            if (!reading.isEmpty()) {
-                if (isTextualMonth(reading)) {
-                    // Текстовый месяц в показаниях - заменяем на 0
-                    parts[i + 1] = "0";
-                } else if (!isValidMeterOrReading(reading)) {
-                    // Неверный формат показаний - заменяем на 0
-                    parts[i + 1] = "0";
-                }
-            }
-        }
-
-        // Собираем исправленную строку
-        StringBuilder result = new StringBuilder(parts[0]);
-        for (int i = 1; i < parts.length; i++) {
-            result.append(";").append(parts[i]);
-        }
-
-        return result.toString();
-    }
-
-    /**
      * Извлекает тип ошибки БД из сообщения.
      */
     private static String extractDbErrorType(String errorMessage) {
@@ -876,31 +500,36 @@ public class Main {
      * @return массив из двух чисел: [количество успешно сохраненных, количество ошибок]
      */
     private static int[] saveToDatabaseWithStats(List<String> records,
-                                       AddressRepository addressRepo,
+                                       LocalityRepository localityRepo,
+                                       StreetRepository streetRepo,
+                                       HouseRepository houseRepo,
+                                       ApartmentRepository apartmentRepo,
                                        AccountRepository accountRepo,
-                                       BillingRepository billingRepo,
+                                       BillingPeriodRepository billingPeriodRepo,
+                                       MeterChargeRepository meterChargeRepo,
                                        Map<String, Integer> dbErrorCounts,
-                                       Map<String, List<String>> dbErrorSamples) {
+                                       Map<String, List<String>> dbErrorSamples,
+                                       RecordParser parser) {
         int savedCount = 0;
         int errorCount = 0;
         for (String line : records) {
             try {
-                saveRecordToDatabase(line, addressRepo, accountRepo, billingRepo);
+                saveRecordToDatabase(line, localityRepo, streetRepo, houseRepo, apartmentRepo, accountRepo, billingPeriodRepo, meterChargeRepo, parser);
                 savedCount++;
             } catch (Exception e) {
                 errorCount++;
                 String errorMsg = e.getMessage();
-                
+
                 // Извлекаем тип ошибки
                 String errorType = extractDbErrorType(errorMsg);
                 dbErrorCounts.put(errorType, dbErrorCounts.getOrDefault(errorType, 0) + 1);
-                
+
                 // Сохраняем примеры (до 5 на каждый тип)
                 dbErrorSamples.computeIfAbsent(errorType, k -> new ArrayList<>());
                 if (dbErrorSamples.get(errorType).size() < 5) {
                     dbErrorSamples.get(errorType).add(line.substring(0, Math.min(150, line.length())));
                 }
-                
+
                 System.err.println("Ошибка сохранения записи в БД: " + errorMsg);
                 System.err.println("Запись: " + line);
             }
@@ -915,63 +544,59 @@ public class Main {
      * Сохранение одной записи в базу данных.
      */
     private static void saveRecordToDatabase(String line,
-                                              AddressRepository addressRepo,
+                                              LocalityRepository localityRepo,
+                                              StreetRepository streetRepo,
+                                              HouseRepository houseRepo,
+                                              ApartmentRepository apartmentRepo,
                                               AccountRepository accountRepo,
-                                              BillingRepository billingRepo) throws SQLException {
-        ParseResult result = parseRecord(line);
-        if (!result.isValid() || result.recordData() == null) {
+                                              BillingPeriodRepository billingPeriodRepo,
+                                              MeterChargeRepository meterChargeRepo,
+                                              RecordParser parser) throws SQLException {
+        ParseResult result = parser.parse(line);
+        if (!result.isValid()) {
             throw new SQLException("Невозможно сохранить невалидную запись");
         }
 
-        RecordData data = result.recordData();
+        ParsedRecord data = result.getRecordData();
 
-        // 1. Сохраняем адрес и получаем ID квартиры
-        Map<String, Object> address = data.address();
-        String locality = (String) address.get("locality");
-        String street = (String) address.get("street");
-        String house = (String) address.get("house");
-        List<String> apartments = (List<String>) address.get("apartments");
-        String apartment = apartments != null && !apartments.isEmpty() 
-            ? String.join(" ", apartments) 
-            : "0";
+        // 1. Сохраняем адрес (locality -> street -> house -> apartment)
+        Address address = data.getAddress();
+        String[] addressParts = address.getFullAddress().split(",");
+        String localityName = addressParts[0].trim();
+        String streetName = addressParts.length > 1 ? addressParts[1].trim() : "Улица не указана";
+        String houseNumber = addressParts.length > 2 ? addressParts[2].trim() : "Дом не указан";
+        String apartmentNumber = addressParts.length > 3 ? addressParts[3].trim() : "0";
 
-        int apartmentId = addressRepo.getOrCreateAddress(locality, street, house, apartment);
+        // Сохраняем или находим населенный пункт
+        Locality locality = localityRepo.findByName(localityName)
+            .orElseGet(() -> localityRepo.save(new Locality(null, localityName, null)));
 
-        // 2. Сохраняем лицевой счет и получаем его ID
-        int accountId = accountRepo.createOrUpdateAccount(data.accountNumber(), data.payerName(), apartmentId);
+        // Сохраняем или находим улицу
+        Street street = streetRepo.findByLocalityIdAndName(locality.getId(), streetName)
+            .orElseGet(() -> streetRepo.save(new Street(null, locality.getId(), streetName, null)));
+
+        // Сохраняем или находим дом
+        House house = houseRepo.findByStreetIdAndNumber(street.getId(), houseNumber)
+            .orElseGet(() -> houseRepo.save(new House(null, street.getId(), houseNumber, null)));
+
+        // Сохраняем или находим квартиру
+        Apartment apartment = apartmentRepo.findByHouseIdAndNumber(house.getId(), apartmentNumber)
+            .orElseGet(() -> apartmentRepo.save(new Apartment(null, house.getId(), apartmentNumber)));
+
+        // 2. Сохраняем лицевой счет
+        Account account = accountRepo.findByAccountNumber(data.getAccountNumber())
+            .orElseGet(() -> accountRepo.save(new Account(null, apartment.getId(), data.getAccountNumber(), data.getPayerName())));
 
         // 3. Сохраняем период начисления
-        String period = data.billingPeriod();
-        double totalAmount = 0.0;
-        
-        // Суммируем суммы из всех начислений
-        for (Map<String, Object> charge : data.charges()) {
-            Object amountObj = charge.get("amount");
-            if (amountObj instanceof Double) {
-                totalAmount += (Double) amountObj;
-            }
-        }
-
-        int billingPeriodId = billingRepo.createOrUpdateBillingPeriod(accountId, period, totalAmount);
+        BillingPeriod billingPeriod = billingPeriodRepo.findByAccountIdAndPeriod(account.getId(), data.getBillingPeriod())
+            .orElseGet(() -> billingPeriodRepo.save(new BillingPeriod(null, account.getId(), data.getBillingPeriod(), data.getTotalAmount())));
 
         // 4. Сохраняем начисления по приборам учета
-        // Теперь передаем accountId и period вместо billingPeriodId
-        List<BillingRepository.MeterCharge> meterCharges = new ArrayList<>();
-        for (Map<String, Object> charge : data.charges()) {
-            String meter = (String) charge.get("meter");
-            Object readingObj = charge.get("meterReading");
-            Object amountObj = charge.get("amount");
-
-            Double reading = readingObj instanceof Double ? (Double) readingObj : null;
-            Double amount = amountObj instanceof Double ? (Double) amountObj : null;
-
+        for (MeterCharge mc : data.getMeterCharges()) {
+            String meter = mc.getMeterName();
             if (meter != null && !meter.isEmpty()) {
-                meterCharges.add(new BillingRepository.MeterCharge(meter, reading, amount));
+                meterChargeRepo.save(new MeterCharge(null, billingPeriod.getId(), meter, mc.getReading(), mc.getAmount()));
             }
-        }
-
-        if (!meterCharges.isEmpty()) {
-            billingRepo.addMeterCharges(accountId, period, meterCharges);
         }
     }
 }

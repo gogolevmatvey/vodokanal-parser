@@ -1,9 +1,8 @@
-/**# Исключения для работы с базой данных
 package org.example.exception;
 
 /**
  * Исключение, возникающее при ошибке работы с базой данных
-
+ */
 public class DatabaseException extends RuntimeException {
     
     public DatabaseException(String message) {
@@ -14,4 +13,3 @@ public class DatabaseException extends RuntimeException {
         super(message, cause);
     }
 }
- */
