@@ -1,6 +1,6 @@
 package org.example.repository;
 
-import org.example.parser.model.BillingPeriod;
+import org.example.model.domain.BillingPeriod;
 
 import java.util.List;
 import java.util.Optional;

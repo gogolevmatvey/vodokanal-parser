@@ -1,6 +1,6 @@
 package org.example.repository;
 
-import org.example.parser.model.MeterCharge;
+import org.example.model.domain.MeterCharge;
 
 import java.util.List;
 import java.util.Optional;

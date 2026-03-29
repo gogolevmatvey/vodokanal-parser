@@ -1,6 +1,6 @@
 package org.example.repository;
 
-import org.example.parser.model.Street;
+import org.example.model.domain.Street;
 
 import java.util.List;
 import java.util.Optional;

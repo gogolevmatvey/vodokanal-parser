@@ -1,6 +1,6 @@
 package org.example.repository;
 
-import org.example.parser.model.Apartment;
+import org.example.model.domain.Apartment;
 
 import java.util.List;
 import java.util.Optional;

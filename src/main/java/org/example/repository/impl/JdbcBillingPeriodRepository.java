@@ -1,7 +1,7 @@
 package org.example.repository.impl;
 
 import org.example.exception.DatabaseException;
-import org.example.parser.model.BillingPeriod;
+import org.example.model.domain.BillingPeriod;
 import org.example.repository.BillingPeriodRepository;
 
 import javax.sql.DataSource;

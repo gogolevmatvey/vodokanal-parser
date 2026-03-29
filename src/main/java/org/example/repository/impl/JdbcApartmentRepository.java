@@ -1,7 +1,7 @@
 package org.example.repository.impl;
 
 import org.example.exception.DatabaseException;
-import org.example.parser.model.Apartment;
+import org.example.model.domain.Apartment;
 import org.example.repository.ApartmentRepository;
 
 import javax.sql.DataSource;

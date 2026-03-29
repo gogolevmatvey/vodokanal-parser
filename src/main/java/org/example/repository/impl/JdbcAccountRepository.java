@@ -1,7 +1,7 @@
 package org.example.repository.impl;
 
 import org.example.exception.DatabaseException;
-import org.example.parser.model.Account;
+import org.example.model.domain.Account;
 import org.example.repository.AccountRepository;
 
 import javax.sql.DataSource;

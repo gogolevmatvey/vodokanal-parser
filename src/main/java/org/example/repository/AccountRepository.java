@@ -1,6 +1,6 @@
 package org.example.repository;
 
-import org.example.parser.model.Account;
+import org.example.model.domain.Account;
 
 import java.util.List;
 import java.util.Optional;

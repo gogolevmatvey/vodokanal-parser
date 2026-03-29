@@ -1,7 +1,7 @@
 package org.example.repository.impl;
 
 import org.example.exception.DatabaseException;
-import org.example.parser.model.Locality;
+import org.example.model.domain.Locality;
 import org.example.repository.LocalityRepository;
 
 import javax.sql.DataSource;
@@ -22,7 +22,7 @@ public class JdbcLocalityRepository implements LocalityRepository {
     
     @Override
     public Optional<Locality> findById(Long id) {
-        String sql = "SELECT id, name, type FROM localities WHERE id = ?";
+        String sql = "SELECT id, name FROM localities WHERE id = ?";
         try (Connection conn = dataSource.getConnection();
              PreparedStatement stmt = conn.prepareStatement(sql)) {
             stmt.setLong(1, id);
@@ -35,10 +35,10 @@ public class JdbcLocalityRepository implements LocalityRepository {
         }
         return Optional.empty();
     }
-    
+
     @Override
     public List<Locality> findAll() {
-        String sql = "SELECT id, name, type FROM localities ORDER BY name";
+        String sql = "SELECT id, name FROM localities ORDER BY name";
         List<Locality> result = new ArrayList<>();
         try (Connection conn = dataSource.getConnection();
              PreparedStatement stmt = conn.prepareStatement(sql);
@@ -51,10 +51,10 @@ public class JdbcLocalityRepository implements LocalityRepository {
         }
         return result;
     }
-    
+
     @Override
     public List<Locality> findByNameContaining(String name) {
-        String sql = "SELECT id, name, type FROM localities WHERE name ILIKE ? ORDER BY name LIMIT 100";
+        String sql = "SELECT id, name FROM localities WHERE name ILIKE ? ORDER BY name LIMIT 100";
         List<Locality> result = new ArrayList<>();
         try (Connection conn = dataSource.getConnection();
              PreparedStatement stmt = conn.prepareStatement(sql)) {
@@ -68,10 +68,10 @@ public class JdbcLocalityRepository implements LocalityRepository {
         }
         return result;
     }
-    
+
     @Override
     public Optional<Locality> findByName(String name) {
-        String sql = "SELECT id, name, type FROM localities WHERE name = ?";
+        String sql = "SELECT id, name FROM localities WHERE name = ?";
         try (Connection conn = dataSource.getConnection();
              PreparedStatement stmt = conn.prepareStatement(sql)) {
             stmt.setString(1, name);
@@ -84,24 +84,24 @@ public class JdbcLocalityRepository implements LocalityRepository {
         }
         return Optional.empty();
     }
-    
+
     @Override
     public Locality save(Locality entity) {
-        String sql = "INSERT INTO localities (name, type) VALUES (?, ?) " +
-                     "ON CONFLICT (name) DO UPDATE SET type = EXCLUDED.type " +
-                     "RETURNING id, name, type";
+        String sql = "INSERT INTO localities (name) VALUES (?) " +
+                     "ON CONFLICT (name) DO NOTHING " +
+                     "RETURNING id, name";
         try (Connection conn = dataSource.getConnection();
              PreparedStatement stmt = conn.prepareStatement(sql)) {
             stmt.setString(1, entity.getName());
-            stmt.setString(2, entity.getType());
             ResultSet rs = stmt.executeQuery();
             if (rs.next()) {
                 return mapRow(rs);
             }
+            // Если запись уже существует (конфликт), находим её
+            return findByName(entity.getName()).orElse(null);
         } catch (SQLException e) {
             throw new DatabaseException("Error saving locality", e);
         }
-        return null;
     }
     
     @Override
@@ -120,7 +120,6 @@ public class JdbcLocalityRepository implements LocalityRepository {
         Locality locality = new Locality();
         locality.setId(rs.getLong("id"));
         locality.setName(rs.getString("name"));
-        locality.setType(rs.getString("type"));
         return locality;
     }
 }

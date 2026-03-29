@@ -1,9 +1,9 @@
 package org.example;
 
-import org.example.parser.model.ParseResult;
-import org.example.parser.model.ParsedRecord;
-import org.example.service.RecordParser;
-import org.example.service.RecordCorrector;
+import org.example.model.common.ParseResult;
+import org.example.model.common.ParsedRecord;
+import org.example.service.parsing.RecordParser;
+import org.example.service.parsing.RecordCorrector;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.DisplayName;
 

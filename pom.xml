@@ -14,7 +14,21 @@
         <maven.compiler.source>25</maven.compiler.source>
         <maven.compiler.target>25</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <spring-boot.version>4.0.5</spring-boot.version>
     </properties>
+
+    <!-- Spring Dependency Management -->
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-dependencies</artifactId>
+                <version>${spring-boot.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
 
     <dependencies>
         <!-- Source: https://mvnrepository.com/artifact/org.slf4j/slf4j-simple -->
@@ -22,7 +36,7 @@
             <groupId>org.slf4j</groupId>
             <artifactId>slf4j-simple</artifactId>
             <version>2.0.17</version>
-            <scope>test</scope>
+            <scope>compile</scope>
         </dependency>
 
         <!-- Source: https://mvnrepository.com/artifact/org.postgresql/postgresql -->
@@ -53,14 +67,14 @@
         <dependency>
             <groupId>com.google.guava</groupId>
             <artifactId>guava</artifactId>
-            <version>33.2.1-jre</version>
+            <version>33.5.0-jre</version>
         </dependency>
 
         <!-- Mockito для тестирования -->
         <dependency>
             <groupId>org.mockito</groupId>
             <artifactId>mockito-core</artifactId>
-            <version>5.14.2</version>
+            <version>5.23.0</version>
             <scope>test</scope>
         </dependency>
 
@@ -68,14 +82,12 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-web</artifactId>
-            <version>3.2.0</version>
         </dependency>
 
-        <!-- Spring Boot Data JPA (опционально, если понадобится) -->
+        <!-- Spring Boot Data JDBC -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-data-jdbc</artifactId>
-            <version>3.2.0</version>
         </dependency>
     </dependencies>
 
@@ -97,21 +109,15 @@
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
-                <version>3.2.0</version>
+                <version>${spring-boot.version}</version>
             </plugin>
 
             <plugin>
                 <groupId>org.codehaus.mojo</groupId>
                 <artifactId>exec-maven-plugin</artifactId>
-                <version>3.1.0</version>
+                <version>3.6.3</version>
                 <configuration>
-                    <executable>java</executable>
-                    <arguments>
-                        <argument>-Dfile.encoding=UTF-8</argument>
-                        <argument>-classpath</argument>
-                    <classpath />
-                        <argument>${exec.mainClass}</argument>
-                    </arguments>
+                    <mainClass>org.example.Main</mainClass>
                 </configuration>
             </plugin>
         </plugins>

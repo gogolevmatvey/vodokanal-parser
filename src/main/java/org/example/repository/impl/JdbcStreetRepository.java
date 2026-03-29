@@ -1,7 +1,7 @@
 package org.example.repository.impl;
 
 import org.example.exception.DatabaseException;
-import org.example.parser.model.Street;
+import org.example.model.domain.Street;
 import org.example.repository.StreetRepository;
 
 import javax.sql.DataSource;
@@ -22,7 +22,7 @@ public class JdbcStreetRepository implements StreetRepository {
     
     @Override
     public Optional<Street> findById(Long id) {
-        String sql = "SELECT id, locality_id, name, type FROM streets WHERE id = ?";
+        String sql = "SELECT id, locality_id, name FROM streets WHERE id = ?";
         try (Connection conn = dataSource.getConnection();
              PreparedStatement stmt = conn.prepareStatement(sql)) {
             stmt.setLong(1, id);
@@ -35,10 +35,10 @@ public class JdbcStreetRepository implements StreetRepository {
         }
         return Optional.empty();
     }
-    
+
     @Override
     public List<Street> findAll() {
-        String sql = "SELECT id, locality_id, name, type FROM streets ORDER BY name";
+        String sql = "SELECT id, locality_id, name FROM streets ORDER BY name";
         List<Street> result = new ArrayList<>();
         try (Connection conn = dataSource.getConnection();
              PreparedStatement stmt = conn.prepareStatement(sql);
@@ -51,10 +51,10 @@ public class JdbcStreetRepository implements StreetRepository {
         }
         return result;
     }
-    
+
     @Override
     public List<Street> findByLocalityId(Long localityId) {
-        String sql = "SELECT id, locality_id, name, type FROM streets WHERE locality_id = ? ORDER BY name";
+        String sql = "SELECT id, locality_id, name FROM streets WHERE locality_id = ? ORDER BY name";
         List<Street> result = new ArrayList<>();
         try (Connection conn = dataSource.getConnection();
              PreparedStatement stmt = conn.prepareStatement(sql)) {
@@ -68,10 +68,10 @@ public class JdbcStreetRepository implements StreetRepository {
         }
         return result;
     }
-    
+
     @Override
     public List<Street> findByLocalityIdAndNameContaining(Long localityId, String name) {
-        String sql = "SELECT id, locality_id, name, type FROM streets WHERE locality_id = ? AND name ILIKE ? ORDER BY name LIMIT 100";
+        String sql = "SELECT id, locality_id, name FROM streets WHERE locality_id = ? AND name ILIKE ? ORDER BY name LIMIT 100";
         List<Street> result = new ArrayList<>();
         try (Connection conn = dataSource.getConnection();
              PreparedStatement stmt = conn.prepareStatement(sql)) {
@@ -86,10 +86,10 @@ public class JdbcStreetRepository implements StreetRepository {
         }
         return result;
     }
-    
+
     @Override
     public Optional<Street> findByLocalityIdAndName(Long localityId, String name) {
-        String sql = "SELECT id, locality_id, name, type FROM streets WHERE locality_id = ? AND name = ?";
+        String sql = "SELECT id, locality_id, name FROM streets WHERE locality_id = ? AND name = ?";
         try (Connection conn = dataSource.getConnection();
              PreparedStatement stmt = conn.prepareStatement(sql)) {
             stmt.setLong(1, localityId);
@@ -103,25 +103,25 @@ public class JdbcStreetRepository implements StreetRepository {
         }
         return Optional.empty();
     }
-    
+
     @Override
     public Street save(Street entity) {
-        String sql = "INSERT INTO streets (locality_id, name, type) VALUES (?, ?, ?) " +
-                     "ON CONFLICT (locality_id, name) DO UPDATE SET type = EXCLUDED.type " +
-                     "RETURNING id, locality_id, name, type";
+        String sql = "INSERT INTO streets (locality_id, name) VALUES (?, ?) " +
+                     "ON CONFLICT (locality_id, name) DO NOTHING " +
+                     "RETURNING id, locality_id, name";
         try (Connection conn = dataSource.getConnection();
              PreparedStatement stmt = conn.prepareStatement(sql)) {
             stmt.setLong(1, entity.getLocalityId());
             stmt.setString(2, entity.getName());
-            stmt.setString(3, entity.getType());
             ResultSet rs = stmt.executeQuery();
             if (rs.next()) {
                 return mapRow(rs);
             }
+            // Если запись уже существует (конфликт), находим её
+            return findByLocalityIdAndName(entity.getLocalityId(), entity.getName()).orElse(null);
         } catch (SQLException e) {
             throw new DatabaseException("Error saving street", e);
         }
-        return null;
     }
     
     @Override
@@ -141,7 +141,6 @@ public class JdbcStreetRepository implements StreetRepository {
         street.setId(rs.getLong("id"));
         street.setLocalityId(rs.getLong("locality_id"));
         street.setName(rs.getString("name"));
-        street.setType(rs.getString("type"));
         return street;
     }
 }

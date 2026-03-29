@@ -1,7 +1,7 @@
 package org.example.repository.impl;
 
 import org.example.exception.DatabaseException;
-import org.example.parser.model.MeterCharge;
+import org.example.model.domain.MeterCharge;
 import org.example.repository.MeterChargeRepository;
 
 import javax.sql.DataSource;

@@ -1,6 +1,6 @@
 package org.example.repository;
 
-import org.example.parser.model.Locality;
+import org.example.model.domain.Locality;
 
 import java.util.List;
 import java.util.Optional;
