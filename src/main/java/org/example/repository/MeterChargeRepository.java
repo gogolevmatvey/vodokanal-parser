@@ -9,14 +9,14 @@ import java.util.Optional;
  * Репозиторий для работы с начислениями по приборам учета
  */
 public interface MeterChargeRepository extends BaseRepository<MeterCharge, Long> {
-    
+
     /**
-     * Найти начисления по идентификатору периода
+     * Найти начисления по идентификатору лицевого счета и периоду
      */
-    List<MeterCharge> findByBillingPeriodId(Long billingPeriodId);
-    
+    List<MeterCharge> findByAccountIdAndPeriod(Long accountId, String period);
+
     /**
-     * Найти начисление по имени прибора и периоду
+     * Найти начисление по имени прибора, счету и периоду
      */
-    Optional<MeterCharge> findByBillingPeriodIdAndMeterName(Long billingPeriodId, String meterName);
+    Optional<MeterCharge> findByAccountIdAndPeriodAndMeterName(Long accountId, String period, String meterName);
 }

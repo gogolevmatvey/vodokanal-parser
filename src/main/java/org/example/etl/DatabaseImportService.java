@@ -178,7 +178,14 @@ public class DatabaseImportService {
                 String meter = mc.getMeterName();
                 if (meter != null && !meter.isEmpty()) {
                     log.trace("Сохранение начисления по прибору: {}", meter);
-                    meterChargeRepo.save(new MeterCharge(null, billingPeriod.getId(), meter, mc.getReading(), mc.getAmount()));
+                    // Создаем новый MeterCharge с accountId и period вместо billingPeriodId
+                    MeterCharge newCharge = new MeterCharge();
+                    newCharge.setAccountId(account.getId());
+                    newCharge.setPeriod(data.getBillingPeriod());
+                    newCharge.setMeterName(mc.getMeterName());
+                    newCharge.setReading(mc.getReading());
+                    newCharge.setAmount(mc.getAmount());
+                    meterChargeRepo.save(newCharge);
                 }
             }
         } catch (Exception e) {

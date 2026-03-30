@@ -22,7 +22,7 @@ public class JdbcHouseRepository implements HouseRepository {
     
     @Override
     public Optional<House> findById(Long id) {
-        String sql = "SELECT id, street_id, number, building FROM houses WHERE id = ?";
+        String sql = "SELECT id, street_id, number FROM houses WHERE id = ?";
         try (Connection conn = dataSource.getConnection();
              PreparedStatement stmt = conn.prepareStatement(sql)) {
             stmt.setLong(1, id);
@@ -35,10 +35,10 @@ public class JdbcHouseRepository implements HouseRepository {
         }
         return Optional.empty();
     }
-    
+
     @Override
     public List<House> findAll() {
-        String sql = "SELECT id, street_id, number, building FROM houses ORDER BY number";
+        String sql = "SELECT id, street_id, number FROM houses ORDER BY number";
         List<House> result = new ArrayList<>();
         try (Connection conn = dataSource.getConnection();
              PreparedStatement stmt = conn.prepareStatement(sql);
@@ -51,10 +51,10 @@ public class JdbcHouseRepository implements HouseRepository {
         }
         return result;
     }
-    
+
     @Override
     public List<House> findByStreetId(Long streetId) {
-        String sql = "SELECT id, street_id, number, building FROM houses WHERE street_id = ? ORDER BY number";
+        String sql = "SELECT id, street_id, number FROM houses WHERE street_id = ? ORDER BY number";
         List<House> result = new ArrayList<>();
         try (Connection conn = dataSource.getConnection();
              PreparedStatement stmt = conn.prepareStatement(sql)) {
@@ -68,10 +68,10 @@ public class JdbcHouseRepository implements HouseRepository {
         }
         return result;
     }
-    
+
     @Override
     public List<House> findByStreetIdAndNumberContaining(Long streetId, String number) {
-        String sql = "SELECT id, street_id, number, building FROM houses WHERE street_id = ? AND number ILIKE ? ORDER BY number LIMIT 100";
+        String sql = "SELECT id, street_id, number FROM houses WHERE street_id = ? AND number ILIKE ? ORDER BY number LIMIT 100";
         List<House> result = new ArrayList<>();
         try (Connection conn = dataSource.getConnection();
              PreparedStatement stmt = conn.prepareStatement(sql)) {
@@ -86,10 +86,10 @@ public class JdbcHouseRepository implements HouseRepository {
         }
         return result;
     }
-    
+
     @Override
     public Optional<House> findByStreetIdAndNumber(Long streetId, String number) {
-        String sql = "SELECT id, street_id, number, building FROM houses WHERE street_id = ? AND number = ?";
+        String sql = "SELECT id, street_id, number FROM houses WHERE street_id = ? AND number = ?";
         try (Connection conn = dataSource.getConnection();
              PreparedStatement stmt = conn.prepareStatement(sql)) {
             stmt.setLong(1, streetId);
@@ -103,25 +103,25 @@ public class JdbcHouseRepository implements HouseRepository {
         }
         return Optional.empty();
     }
-    
+
     @Override
     public House save(House entity) {
-        String sql = "INSERT INTO houses (street_id, number, building) VALUES (?, ?, ?) " +
-                     "ON CONFLICT (street_id, number) DO UPDATE SET building = EXCLUDED.building " +
-                     "RETURNING id, street_id, number, building";
+        String sql = "INSERT INTO houses (street_id, number) VALUES (?, ?) " +
+                     "ON CONFLICT (street_id, number) DO NOTHING " +
+                     "RETURNING id, street_id, number";
         try (Connection conn = dataSource.getConnection();
              PreparedStatement stmt = conn.prepareStatement(sql)) {
             stmt.setLong(1, entity.getStreetId());
             stmt.setString(2, entity.getNumber());
-            stmt.setString(3, entity.getBuilding());
             ResultSet rs = stmt.executeQuery();
             if (rs.next()) {
                 return mapRow(rs);
             }
+            // Если запись уже существует (конфликт), находим её
+            return findByStreetIdAndNumber(entity.getStreetId(), entity.getNumber()).orElse(null);
         } catch (SQLException e) {
             throw new DatabaseException("Error saving house", e);
         }
-        return null;
     }
     
     @Override
@@ -141,7 +141,6 @@ public class JdbcHouseRepository implements HouseRepository {
         house.setId(rs.getLong("id"));
         house.setStreetId(rs.getLong("street_id"));
         house.setNumber(rs.getString("number"));
-        house.setBuilding(rs.getString("building"));
         return house;
     }
 }
