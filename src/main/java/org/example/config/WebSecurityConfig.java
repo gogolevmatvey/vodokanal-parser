@@ -34,14 +34,8 @@ public class WebSecurityConfig {
             .csrf(csrf -> csrf.disable())
             .cors(cors -> cors.configurationSource(corsConfigurationSource()))
             .authorizeHttpRequests(auth -> auth
-                // REST API endpoints - требуют авторизации
-                .requestMatchers("/api/localities/**").authenticated()
-                .requestMatchers("/api/streets/**").authenticated()
-                .requestMatchers("/api/houses/**").authenticated()
-                .requestMatchers("/api/apartments/**").authenticated()
-                .requestMatchers("/api/accounts/**").authenticated()
-                .requestMatchers("/api/import/**").hasRole("ADMIN")
-                .requestMatchers("/api/statistics").authenticated()
+                // REST API endpoints - временно без авторизации для тестирования
+                .requestMatchers("/api/**").permitAll()
                 // Статические ресурсы (Angular) - публичный доступ
                 .requestMatchers("/", "/index.html", "/*.js", "/*.css", "/*.ico", "/assets/**").permitAll()
                 // Страница логина

@@ -20,6 +20,7 @@ import { ApiService } from '../../services/api.service';
       </div>
     </div>
   `,
+  standalone: false,
   styles: []
 })
 export class StatisticsComponent implements OnInit {

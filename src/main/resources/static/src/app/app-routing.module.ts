@@ -5,7 +5,8 @@ const routes: Routes = [
   { path: '', redirectTo: '/search', pathMatch: 'full' },
   { path: 'search', loadChildren: () => import('./components/search/search.module').then(m => m.SearchModule) },
   { path: 'import', loadChildren: () => import('./components/import/import.module').then(m => m.ImportModule) },
-  { path: 'statistics', loadChildren: () => import('./components/statistics/statistics.module').then(m => m.StatisticsModule) }
+  { path: 'statistics', loadChildren: () => import('./components/statistics/statistics.module').then(m => m.StatisticsModule) },
+  { path: 'login', loadChildren: () => import('./components/login/login.module').then(m => m.LoginModule) }
 ];
 
 @NgModule({

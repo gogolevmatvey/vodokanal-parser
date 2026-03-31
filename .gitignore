@@ -48,10 +48,13 @@ src/main/resources/static/coverage/
 !src/main/resources/static/package-lock.json
 
 # Лог файлы
+logs/
+*.log
 src/main/resources/static/*.log
 error_debug.log
 output.txt
 run.log
+application.log
 
 ### Java ###
 *.class

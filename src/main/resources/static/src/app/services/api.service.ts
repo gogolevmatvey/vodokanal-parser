@@ -1,5 +1,5 @@
 import { Injectable } from '@angular/core';
-import { HttpClient, HttpParams } from '@angular/common/http';
+import { HttpClient, HttpParams, HttpHeaders } from '@angular/common/http';
 import { Observable } from 'rxjs';
 
 export interface ApiResponse<T> {
@@ -44,7 +44,9 @@ export interface Account {
 export class ApiService {
   private readonly baseUrl = '/api';
 
-  constructor(private http: HttpClient) { }
+  constructor(private http: HttpClient) { 
+    console.log('ApiService initialized with baseUrl:', this.baseUrl);
+  }
 
   // Населенные пункты
   getLocalities(search?: string): Observable<ApiResponse<Locality[]>> {
@@ -52,10 +54,13 @@ export class ApiService {
     if (search) {
       params = params.set('search', search);
     }
-    return this.http.get<ApiResponse<Locality[]>>(`${this.baseUrl}/localities`, { params });
+    const url = `${this.baseUrl}/localities`;
+    console.log('GET Localities:', url, 'params:', params.toString());
+    return this.http.get<ApiResponse<Locality[]>>(url, { params });
   }
 
   getLocalityById(id: number): Observable<ApiResponse<Locality>> {
+    console.log('GET Locality by ID:', id);
     return this.http.get<ApiResponse<Locality>>(`${this.baseUrl}/localities/${id}`);
   }
 
@@ -65,7 +70,9 @@ export class ApiService {
     if (search) {
       params = params.set('search', search);
     }
-    return this.http.get<ApiResponse<Street[]>>(`${this.baseUrl}/localities/${localityId}/streets`, { params });
+    const url = `${this.baseUrl}/localities/${localityId}/streets`;
+    console.log('GET Streets:', url, 'params:', params.toString());
+    return this.http.get<ApiResponse<Street[]>>(url, { params });
   }
 
   // Дома
@@ -74,10 +81,9 @@ export class ApiService {
     if (search) {
       params = params.set('search', search);
     }
-    return this.http.get<ApiResponse<House[]>>(
-      `${this.baseUrl}/localities/${localityId}/streets/${streetId}/houses`,
-      { params }
-    );
+    const url = `${this.baseUrl}/localities/${localityId}/streets/${streetId}/houses`;
+    console.log('GET Houses:', url, 'params:', params.toString());
+    return this.http.get<ApiResponse<House[]>>(url, { params });
   }
 
   // Квартиры
@@ -91,18 +97,19 @@ export class ApiService {
     if (search) {
       params = params.set('search', search);
     }
-    return this.http.get<ApiResponse<Apartment[]>>(
-      `${this.baseUrl}/localities/${localityId}/streets/${streetId}/houses/${houseId}/apartments`,
-      { params }
-    );
+    const url = `${this.baseUrl}/localities/${localityId}/streets/${streetId}/houses/${houseId}/apartments`;
+    console.log('GET Apartments:', url, 'params:', params.toString());
+    return this.http.get<ApiResponse<Apartment[]>>(url, { params });
   }
 
   // Лицевые счета
   getAccounts(apartmentId: number): Observable<ApiResponse<Account[]>> {
+    console.log('GET Accounts for apartmentId:', apartmentId);
     return this.http.get<ApiResponse<Account[]>>(`${this.baseUrl}/apartments/${apartmentId}/accounts`);
   }
 
   searchAccountByNumber(number: string): Observable<ApiResponse<Account>> {
+    console.log('GET Account by number:', number);
     return this.http.get<ApiResponse<Account>>(`${this.baseUrl}/accounts/search`, {
       params: new HttpParams().set('number', number)
     });
@@ -110,6 +117,7 @@ export class ApiService {
 
   // Статистика
   getStatistics(): Observable<ApiResponse<Record<string, number>>> {
+    console.log('GET Statistics');
     return this.http.get<ApiResponse<Record<string, number>>>(`${this.baseUrl}/statistics`);
   }
 }

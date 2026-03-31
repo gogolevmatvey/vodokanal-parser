@@ -31,14 +31,6 @@
     </dependencyManagement>
 
     <dependencies>
-        <!-- Source: https://mvnrepository.com/artifact/org.slf4j/slf4j-simple -->
-        <dependency>
-            <groupId>org.slf4j</groupId>
-            <artifactId>slf4j-simple</artifactId>
-            <version>2.0.17</version>
-            <scope>compile</scope>
-        </dependency>
-
         <!-- Source: https://mvnrepository.com/artifact/org.postgresql/postgresql -->
         <dependency>
             <groupId>org.postgresql</groupId>
@@ -85,6 +77,13 @@
             <scope>compile</scope>
         </dependency>
 
+        <!-- Spring Boot Starters (включают Logback) -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter</artifactId>
+            <scope>compile</scope>
+        </dependency>
+
         <!-- Spring Boot Data JDBC -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -99,11 +98,28 @@
     </dependencies>
 
     <build>
+        <resources>
+            <resource>
+                <directory>src/main/resources</directory>
+                <excludes>
+                    <exclude>static/node_modules/**</exclude>
+                    <exclude>static/dist/**</exclude>
+                    <exclude>static/.angular/**</exclude>
+                </excludes>
+            </resource>
+        </resources>
         <plugins>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
                 <version>3.15.0</version>
+                <configuration>
+                    <source>25</source>
+                    <target>25</target>
+                    <compilerArgs>
+                        <arg>-parameters</arg>
+                    </compilerArgs>
+                </configuration>
             </plugin>
 
             <plugin>
@@ -124,7 +140,7 @@
                 <artifactId>exec-maven-plugin</artifactId>
                 <version>3.6.3</version>
                 <configuration>
-                    <mainClass>org.example.Main</mainClass>
+                    <mainClass>org.example.VodokanalApplication</mainClass>
                 </configuration>
             </plugin>
         </plugins>

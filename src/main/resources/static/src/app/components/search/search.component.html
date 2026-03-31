@@ -1,7 +1,7 @@
 <div class="search-form">
   <h4 class="mb-4">🔍 Поиск по адресу</h4>
   
-  <form [formGroup]="searchForm" (ngSubmit)="onSubmit()">
+  <form [formGroup]="searchForm">
     <!-- Населенный пункт -->
     <div class="mb-3">
       <label for="locality" class="form-label">Населенный пункт</label>
@@ -86,10 +86,8 @@
       >
     </div>
 
-    <div class="d-grid">
-      <button type="submit" class="btn btn-primary" [disabled]="!accountId">
-        Найти
-      </button>
+    <div class="alert alert-success" *ngIf="accountId">
+      ✅ Лицевой счет выбран
     </div>
   </form>
 </div>
