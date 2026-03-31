@@ -5,25 +5,18 @@ package org.example.model.dto;
  */
 public class LocalityDTO {
     private final Long id;
-    private final String displayName;
-    
-    public LocalityDTO(Long id, String name, String type) {
+    private final String name;
+
+    public LocalityDTO(Long id, String name) {
         this.id = id;
-        this.displayName = formatDisplayName(name, type);
+        this.name = name;
     }
-    
-    private String formatDisplayName(String name, String type) {
-        if (type == null || type.isEmpty()) {
-            return name;
-        }
-        return type + ". " + name;
-    }
-    
+
     public Long getId() { return id; }
-    public String getDisplayName() { return displayName; }
-    
+    public String getName() { return name; }
+
     @Override
     public String toString() {
-        return displayName;
+        return name;
     }
 }

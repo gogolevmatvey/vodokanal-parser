@@ -1,0 +1,105 @@
+/* Глобальные стили */
+body {
+  background-color: #f5f5f5;
+}
+
+.container {
+  max-width: 1200px;
+}
+
+/* Стили для форм поиска */
+.search-form {
+  background: white;
+  border-radius: 8px;
+  padding: 24px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.form-label {
+  font-weight: 500;
+  color: #333;
+}
+
+.form-select,
+.form-control {
+  border-radius: 6px;
+  border: 1px solid #ddd;
+}
+
+.form-select:focus,
+.form-control:focus {
+  border-color: #1976d2;
+  box-shadow: 0 0 0 0.2rem rgba(25, 118, 210, 0.25);
+}
+
+/* Кнопки */
+.btn-primary {
+  background-color: #1976d2;
+  border-color: #1976d2;
+}
+
+.btn-primary:hover {
+  background-color: #1565c0;
+  border-color: #1565c0;
+}
+
+/* Карточки */
+.card {
+  border-radius: 8px;
+  border: none;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.card-header {
+  background-color: #fff;
+  border-bottom: 2px solid #1976d2;
+  font-weight: 600;
+}
+
+/* Прогресс бар */
+.progress {
+  height: 24px;
+  border-radius: 12px;
+}
+
+.progress-bar {
+  background-color: #1976d2;
+}
+
+/* Статистика */
+.statistics-card {
+  background: white;
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 16px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.statistics-card h5 {
+  color: #666;
+  font-size: 14px;
+  margin-bottom: 8px;
+}
+
+.statistics-card .value {
+  color: #333;
+  font-size: 24px;
+  font-weight: 600;
+}
+
+/* Уведомления */
+.alert {
+  border-radius: 8px;
+}
+
+/* Адаптивность для формы поиска */
+@media (max-width: 768px) {
+  .house-apartment-row {
+    flex-direction: column;
+  }
+  
+  .house-apartment-row .col-md-6 {
+    width: 100%;
+    margin-bottom: 16px;
+  }
+}

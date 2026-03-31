@@ -121,7 +121,10 @@ public class DatabaseImportService {
         String localityName = addressParts[0].trim();
         String streetName = addressParts.length > 1 ? addressParts[1].trim() : "Улица не указана";
         String houseNumber = addressParts.length > 2 ? addressParts[2].trim() : "Дом не указан";
-        String apartmentNumber = addressParts.length > 3 ? addressParts[3].trim() : "0";
+        // Номер квартиры: если не указан, записываем "данные отсутствуют"
+        String apartmentNumber = addressParts.length > 3 && !addressParts[3].trim().isEmpty() 
+            ? addressParts[3].trim() 
+            : "данные отсутствуют";
 
         try {
             // Сохраняем или находим населенный пункт

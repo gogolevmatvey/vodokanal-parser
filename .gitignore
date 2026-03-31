@@ -36,3 +36,41 @@ build/
 
 ### Mac OS ###
 .DS_Store
+
+### Angular / Node.js ###
+src/main/resources/static/node_modules/
+src/main/resources/static/dist/
+src/main/resources/static/.angular/
+src/main/resources/static/.sass-cache/
+src/main/resources/static/coverage/
+
+# Оставляем package-lock.json для воспроизводимых сборок
+!src/main/resources/static/package-lock.json
+
+# Лог файлы
+src/main/resources/static/*.log
+error_debug.log
+output.txt
+run.log
+
+### Java ###
+*.class
+*.jar
+*.war
+*.ear
+*.hprof
+*.log
+
+### Maven ###
+pom.xml.tag
+pom.xml.releaseBackup
+pom.xml.versionsBackup
+pom.xml.next
+release.properties
+dependency-reduced-pom.xml
+buildNumber.properties
+.mvn/timing.properties
+.mvn/wrapper/maven-wrapper.jar
+
+### System Files ###
+Thumbs.db

@@ -17,7 +17,7 @@ public class SearchService {
     private final HouseRepository houseRepo;
     private final ApartmentRepository apartmentRepo;
     private final AccountRepository accountRepo;
-    
+
     public SearchService(LocalityRepository localityRepo, StreetRepository streetRepo,
                          HouseRepository houseRepo, ApartmentRepository apartmentRepo,
                          AccountRepository accountRepo) {
@@ -27,25 +27,25 @@ public class SearchService {
         this.apartmentRepo = apartmentRepo;
         this.accountRepo = accountRepo;
     }
-    
+
     /**
      * Поиск населенных пунктов для dropdown
      */
     public List<LocalityDTO> searchLocalities(String query) {
         List<LocalityDTO> result = localityRepo.findAll().stream()
-            .map(l -> new LocalityDTO(l.getId(), l.getName(), l.getType()))
+            .map(l -> new LocalityDTO(l.getId(), l.getName()))
             .collect(Collectors.toList());
-        
+
         if (query != null && !query.trim().isEmpty()) {
             String lowerQuery = query.trim().toLowerCase();
             return result.stream()
-                .filter(l -> l.getDisplayName().toLowerCase().contains(lowerQuery))
+                .filter(l -> l.getName().toLowerCase().contains(lowerQuery))
                 .collect(Collectors.toList());
         }
-        
+
         return result;
     }
-    
+
     /**
      * Поиск улиц для dropdown по выбранному населенному пункту
      */
@@ -53,21 +53,21 @@ public class SearchService {
         if (localityId == null) {
             return List.of();
         }
-        
+
         List<StreetDTO> result = streetRepo.findByLocalityId(localityId).stream()
-            .map(s -> new StreetDTO(s.getId(), s.getName(), s.getType()))
+            .map(s -> new StreetDTO(s.getId(), s.getName()))
             .collect(Collectors.toList());
-        
+
         if (query != null && !query.trim().isEmpty()) {
             String lowerQuery = query.trim().toLowerCase();
             return result.stream()
-                .filter(s -> s.getDisplayName().toLowerCase().contains(lowerQuery))
+                .filter(s -> s.getName().toLowerCase().contains(lowerQuery))
                 .collect(Collectors.toList());
         }
-        
+
         return result;
     }
-    
+
     /**
      * Поиск домов для dropdown по выбранной улице
      */
@@ -75,21 +75,21 @@ public class SearchService {
         if (streetId == null) {
             return List.of();
         }
-        
+
         List<HouseDTO> result = houseRepo.findByStreetId(streetId).stream()
-            .map(h -> new HouseDTO(h.getId(), h.getNumber(), h.getBuilding()))
+            .map(h -> new HouseDTO(h.getId(), h.getNumber()))
             .collect(Collectors.toList());
-        
+
         if (query != null && !query.trim().isEmpty()) {
             String lowerQuery = query.trim().toLowerCase();
             return result.stream()
-                .filter(h -> h.getDisplayNumber().toLowerCase().contains(lowerQuery))
+                .filter(h -> h.getNumber().toLowerCase().contains(lowerQuery))
                 .collect(Collectors.toList());
         }
-        
+
         return result;
     }
-    
+
     /**
      * Поиск квартир для dropdown по выбранному дому
      */
@@ -97,21 +97,21 @@ public class SearchService {
         if (houseId == null) {
             return List.of();
         }
-        
+
         List<ApartmentDTO> result = apartmentRepo.findByHouseId(houseId).stream()
             .map(a -> new ApartmentDTO(a.getId(), a.getNumber()))
             .collect(Collectors.toList());
-        
+
         if (query != null && !query.trim().isEmpty()) {
             String lowerQuery = query.trim().toLowerCase();
             return result.stream()
                 .filter(a -> a.getNumber().toLowerCase().contains(lowerQuery))
                 .collect(Collectors.toList());
         }
-        
+
         return result;
     }
-    
+
     /**
      * Поиск лицевых счетов по выбранной квартире
      */
@@ -119,11 +119,11 @@ public class SearchService {
         if (apartmentId == null) {
             return List.of();
         }
-        
+
         List<AccountDTO> result = accountRepo.findByApartmentId(apartmentId).stream()
             .map(a -> new AccountDTO(a.getId(), a.getAccountNumber(), a.getPayerName()))
             .collect(Collectors.toList());
-        
+
         if (query != null && !query.trim().isEmpty()) {
             String lowerQuery = query.trim().toLowerCase();
             return result.stream()
@@ -131,7 +131,7 @@ public class SearchService {
                             a.getPayerName().toLowerCase().contains(lowerQuery))
                 .collect(Collectors.toList());
         }
-        
+
         return result;
     }
 }

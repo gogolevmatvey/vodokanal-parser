@@ -1,0 +1,95 @@
+<div class="search-form">
+  <h4 class="mb-4">🔍 Поиск по адресу</h4>
+  
+  <form [formGroup]="searchForm" (ngSubmit)="onSubmit()">
+    <!-- Населенный пункт -->
+    <div class="mb-3">
+      <label for="locality" class="form-label">Населенный пункт</label>
+      <input 
+        type="text" 
+        class="form-control" 
+        id="locality"
+        [formControl]="localityControl"
+        [ngbTypeahead]="getLocalities"
+        [resultFormatter]="localityFormatter"
+        [inputFormatter]="localityFormatter"
+        placeholder="Введите название населенного пункта"
+      >
+    </div>
+
+    <!-- Улица -->
+    <div class="mb-3">
+      <label for="street" class="form-label">Улица</label>
+      <input 
+        type="text" 
+        class="form-control" 
+        id="street"
+        [formControl]="streetControl"
+        [ngbTypeahead]="getStreets"
+        [resultFormatter]="streetFormatter"
+        [inputFormatter]="streetFormatter"
+        placeholder="Введите название улицы"
+        [disabled]="!localityId"
+      >
+    </div>
+
+    <!-- Дом и Квартира (в одной строке) -->
+    <div class="row house-apartment-row">
+      <div class="col-md-6">
+        <div class="mb-3">
+          <label for="house" class="form-label">Дом</label>
+          <input 
+            type="text" 
+            class="form-control" 
+            id="house"
+            [formControl]="houseControl"
+            [ngbTypeahead]="getHouses"
+            [resultFormatter]="houseFormatter"
+            [inputFormatter]="houseFormatter"
+            placeholder="Введите номер дома"
+            [disabled]="!streetId"
+          >
+        </div>
+      </div>
+      
+      <div class="col-md-6">
+        <div class="mb-3">
+          <label for="apartment" class="form-label">Квартира</label>
+          <input 
+            type="text" 
+            class="form-control" 
+            id="apartment"
+            [formControl]="apartmentControl"
+            [ngbTypeahead]="getApartments"
+            [resultFormatter]="apartmentFormatter"
+            [inputFormatter]="apartmentFormatter"
+            placeholder="Введите номер квартиры"
+            [disabled]="!houseId"
+          >
+        </div>
+      </div>
+    </div>
+
+    <!-- Лицевой счёт -->
+    <div class="mb-3">
+      <label for="account" class="form-label">Лицевой счёт</label>
+      <input 
+        type="text" 
+        class="form-control" 
+        id="account"
+        [formControl]="accountControl"
+        [ngbTypeahead]="getAccounts"
+        [resultFormatter]="accountFormatter"
+        [inputFormatter]="accountFormatter"
+        placeholder="Введите номер лицевого счёта"
+        [disabled]="!apartmentId"
+      >
+    </div>
+
+    <div class="d-grid">
+      <button type="submit" class="btn btn-primary" [disabled]="!accountId">
+        Найти
+      </button>
+    </div>
+  </form>
+</div>
