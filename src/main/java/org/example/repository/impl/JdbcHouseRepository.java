@@ -107,7 +107,7 @@ public class JdbcHouseRepository implements HouseRepository {
     @Override
     public House save(House entity) {
         String sql = "INSERT INTO houses (street_id, number) VALUES (?, ?) " +
-                     "ON CONFLICT (street_id, number) DO NOTHING " +
+                     "ON CONFLICT (street_id, number) DO UPDATE SET number = EXCLUDED.number " +
                      "RETURNING id, street_id, number";
         try (Connection conn = dataSource.getConnection();
              PreparedStatement stmt = conn.prepareStatement(sql)) {
@@ -117,11 +117,10 @@ public class JdbcHouseRepository implements HouseRepository {
             if (rs.next()) {
                 return mapRow(rs);
             }
-            // Если запись уже существует (конфликт), находим её
-            return findByStreetIdAndNumber(entity.getStreetId(), entity.getNumber()).orElse(null);
         } catch (SQLException e) {
             throw new DatabaseException("Error saving house", e);
         }
+        return null;
     }
     
     @Override

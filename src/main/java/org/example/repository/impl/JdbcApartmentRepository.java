@@ -107,7 +107,7 @@ public class JdbcApartmentRepository implements ApartmentRepository {
     @Override
     public Apartment save(Apartment entity) {
         String sql = "INSERT INTO apartments (house_id, number) VALUES (?, ?) " +
-                     "ON CONFLICT (house_id, number) DO NOTHING " +
+                     "ON CONFLICT (house_id, number) DO UPDATE SET number = EXCLUDED.number " +
                      "RETURNING id, house_id, number";
         try (Connection conn = dataSource.getConnection();
              PreparedStatement stmt = conn.prepareStatement(sql)) {
@@ -120,8 +120,7 @@ public class JdbcApartmentRepository implements ApartmentRepository {
         } catch (SQLException e) {
             throw new DatabaseException("Error saving apartment", e);
         }
-        // Если уже существует, найдем и вернем
-        return findByHouseIdAndNumber(entity.getHouseId(), entity.getNumber()).orElse(null);
+        return null;
     }
     
     @Override

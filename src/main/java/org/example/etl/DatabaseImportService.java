@@ -29,10 +29,10 @@ public class DatabaseImportService {
 
     private final DataSource dataSource;
     private final RecordParser parser;
-    private final org.example.repository.LocalityRepository localityRepo;
-    private final org.example.repository.StreetRepository streetRepo;
-    private final org.example.repository.HouseRepository houseRepo;
-    private final org.example.repository.ApartmentRepository apartmentRepo;
+    private final LocalityRepository localityRepo;
+    private final StreetRepository streetRepo;
+    private final HouseRepository houseRepo;
+    private final ApartmentRepository apartmentRepo;
 
     // === Метрики производительности БД ===
     private final AtomicLong totalQueryTimeNs = new AtomicLong(0);
@@ -88,10 +88,10 @@ public class DatabaseImportService {
 
     public DatabaseImportService(DataSource dataSource,
                                  RecordParser parser,
-                                 org.example.repository.LocalityRepository localityRepo,
-                                 org.example.repository.StreetRepository streetRepo,
-                                 org.example.repository.HouseRepository houseRepo,
-                                 org.example.repository.ApartmentRepository apartmentRepo) {
+                                 LocalityRepository localityRepo,
+                                 StreetRepository streetRepo,
+                                 HouseRepository houseRepo,
+                                 ApartmentRepository apartmentRepo) {
         this.dataSource = dataSource;
         this.parser = parser;
         this.localityRepo = localityRepo;

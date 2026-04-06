@@ -107,7 +107,7 @@ public class JdbcStreetRepository implements StreetRepository {
     @Override
     public Street save(Street entity) {
         String sql = "INSERT INTO streets (locality_id, name) VALUES (?, ?) " +
-                     "ON CONFLICT (locality_id, name) DO NOTHING " +
+                     "ON CONFLICT (locality_id, name) DO UPDATE SET name = EXCLUDED.name " +
                      "RETURNING id, locality_id, name";
         try (Connection conn = dataSource.getConnection();
              PreparedStatement stmt = conn.prepareStatement(sql)) {
@@ -117,11 +117,10 @@ public class JdbcStreetRepository implements StreetRepository {
             if (rs.next()) {
                 return mapRow(rs);
             }
-            // Если запись уже существует (конфликт), находим её
-            return findByLocalityIdAndName(entity.getLocalityId(), entity.getName()).orElse(null);
         } catch (SQLException e) {
             throw new DatabaseException("Error saving street", e);
         }
+        return null;
     }
     
     @Override

@@ -88,7 +88,7 @@ public class JdbcLocalityRepository implements LocalityRepository {
     @Override
     public Locality save(Locality entity) {
         String sql = "INSERT INTO localities (name) VALUES (?) " +
-                     "ON CONFLICT (name) DO NOTHING " +
+                     "ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name " +
                      "RETURNING id, name";
         try (Connection conn = dataSource.getConnection();
              PreparedStatement stmt = conn.prepareStatement(sql)) {
@@ -97,11 +97,10 @@ public class JdbcLocalityRepository implements LocalityRepository {
             if (rs.next()) {
                 return mapRow(rs);
             }
-            // Если запись уже существует (конфликт), находим её
-            return findByName(entity.getName()).orElse(null);
         } catch (SQLException e) {
             throw new DatabaseException("Error saving locality", e);
         }
+        return null;
     }
     
     @Override
