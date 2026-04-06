@@ -3,6 +3,7 @@ package org.example;
 import org.example.config.ConfigManager;
 import org.example.etl.EtlResult;
 import org.example.etl.EtlService;
+import org.example.etl.ReportGenerator;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 import org.example.config.DatabaseConfig;
@@ -68,6 +69,10 @@ public class Main {
                     System.out.printf("  %s: %d (%.2f%%)%n", errorType, count, percent);
                 });
         }
+
+        // Вывод метрик производительности
+        ReportGenerator reportGenerator = context.getBean(ReportGenerator.class);
+        System.out.print(reportGenerator.formatPerformanceMetrics(result));
 
         // Закрываем контекст (и пул соединений)
         ((AnnotationConfigApplicationContext) context).close();

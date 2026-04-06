@@ -8,6 +8,9 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.io.*;
+import java.lang.management.ManagementFactory;
+import java.lang.management.MemoryMXBean;
+import java.lang.management.MemoryUsage;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -56,6 +59,8 @@ public class EtlService {
      * Выполнить ETL-обработку
      */
     public EtlResult process() {
+        long totalStartTime = System.nanoTime();
+
         int validCount = 0;
         int invalidCount = 0;
         int correctedCount = 0;
@@ -63,6 +68,17 @@ public class EtlService {
         int totalCount = 0;
         int dbSavedCount = 0;
         int dbErrorCount = 0;
+
+        long parseTimeNs = 0;
+        long correctTimeNs = 0;
+        long dbImportTimeNs = 0;
+        long fileWriteTimeNs = 0;
+
+        // Метрики памяти
+        MemoryMXBean memoryBean = ManagementFactory.getMemoryMXBean();
+        long peakHeapMemory = 0;
+        long totalHeapMemory = 0;
+        int memorySampleCount = 0;
 
         Map<String, Integer> errorCounts = new TreeMap<>();
         Map<String, Integer> correctedErrorCounts = new TreeMap<>();
@@ -99,16 +115,25 @@ public class EtlService {
 
                 totalCount++;
 
+                // Замер времени парсинга
+                long parseStart = System.nanoTime();
                 ParseResult result = parser.parse(line);
+                parseTimeNs += System.nanoTime() - parseStart;
 
                 if (result.isValid()) {
                     validCount++;
+
+                    // Замер времени записи в файл
+                    long fileWriteStart = System.nanoTime();
                     validWriter.write(line);
                     validWriter.newLine();
+                    fileWriteTimeNs += System.nanoTime() - fileWriteStart;
 
                     dbBatch.add(line);
                     if (dbBatch.size() >= config.getBatchSize()) {
+                        long dbStart = System.nanoTime();
                         var batchResult = importService.saveBatch(dbBatch, 5);
+                        dbImportTimeNs += System.nanoTime() - dbStart;
                         dbSavedCount += batchResult.getSavedCount();
                         dbErrorCount += batchResult.getErrorCount();
                         mergeErrorStats(dbErrorCounts, dbErrorSamples, batchResult);
@@ -116,36 +141,63 @@ public class EtlService {
                     }
                 } else {
                     invalidCount++;
+
+                    // Замер времени записи в файл
+                    long fileWriteStart = System.nanoTime();
                     invalidWriter.write(line + " | Ошибка: " + result.getErrorMessage());
                     invalidWriter.newLine();
+                    fileWriteTimeNs += System.nanoTime() - fileWriteStart;
 
+                    // Замер времени коррекции
+                    long correctStart = System.nanoTime();
                     String correctedLine = corrector.correct(line, result.getErrorMessage());
+                    correctTimeNs += System.nanoTime() - correctStart;
+
                     String errorType = extractErrorType(result.getErrorMessage());
                     boolean wasCorrected = isRecordCorrected(correctedLine, errorType);
 
                     if (wasCorrected) {
+                        // Замер времени записи в файл
+                        long fileWriteStart2 = System.nanoTime();
                         correctedWriter.write(correctedLine);
                         correctedWriter.newLine();
+                        fileWriteTimeNs += System.nanoTime() - fileWriteStart2;
+
                         correctedCount++;
                         correctedErrorCounts.put(errorType, correctedErrorCounts.getOrDefault(errorType, 0) + 1);
 
                         dbBatch.add(correctedLine);
                         if (dbBatch.size() >= config.getBatchSize()) {
+                            long dbStart = System.nanoTime();
                             var batchResult = importService.saveBatch(dbBatch, 5);
+                            dbImportTimeNs += System.nanoTime() - dbStart;
                             dbSavedCount += batchResult.getSavedCount();
                             dbErrorCount += batchResult.getErrorCount();
                             mergeErrorStats(dbErrorCounts, dbErrorSamples, batchResult);
                             dbBatch.clear();
                         }
                     } else {
+                        // Замер времени записи в файл
+                        long fileWriteStart2 = System.nanoTime();
                         uncorrectedWriter.write(line + " | Ошибка: " + result.getErrorMessage());
                         uncorrectedWriter.newLine();
+                        fileWriteTimeNs += System.nanoTime() - fileWriteStart2;
+
                         uncorrectedCount++;
                     }
 
                     errorCounts.put(errorType, errorCounts.getOrDefault(errorType, 0) + 1);
                     reportGenerator.createErrorSamples(errorSamples, errorType,
                             line.substring(0, Math.min(150, line.length())), 5);
+                }
+
+                // Собираем метрики памяти каждые 1000 записей
+                if (totalCount % 1000 == 0) {
+                    MemoryUsage heapUsage = memoryBean.getHeapMemoryUsage();
+                    long usedHeap = heapUsage.getUsed();
+                    peakHeapMemory = Math.max(peakHeapMemory, usedHeap);
+                    totalHeapMemory += usedHeap;
+                    memorySampleCount++;
                 }
 
                 if (totalCount % config.getProgressInterval() == 0) {
@@ -156,15 +208,45 @@ public class EtlService {
 
             // Сохраняем остаток записей в БД
             if (!dbBatch.isEmpty()) {
+                long dbStart = System.nanoTime();
                 var batchResult = importService.saveBatch(dbBatch, 5);
+                dbImportTimeNs += System.nanoTime() - dbStart;
                 dbSavedCount += batchResult.getSavedCount();
                 dbErrorCount += batchResult.getErrorCount();
                 mergeErrorStats(dbErrorCounts, dbErrorSamples, batchResult);
             }
 
+            // Финальный замер памяти
+            MemoryUsage finalHeapUsage = memoryBean.getHeapMemoryUsage();
+            peakHeapMemory = Math.max(peakHeapMemory, finalHeapUsage.getUsed());
+            totalHeapMemory += finalHeapUsage.getUsed();
+            memorySampleCount++;
+
         } catch (IOException e) {
             throw new RuntimeException("Ошибка обработки файла: " + e.getMessage(), e);
         }
+
+        long totalEndTime = System.nanoTime();
+        long totalTimeMs = (totalEndTime - totalStartTime) / 1_000_000;
+
+        long parseTimeMs = parseTimeNs / 1_000_000;
+        long correctTimeMs = correctTimeNs / 1_000_000;
+        long dbImportTimeMs = dbImportTimeNs / 1_000_000;
+        long fileWriteTimeMs = fileWriteTimeNs / 1_000_000;
+
+        long avgHeapMemory = memorySampleCount > 0 ? totalHeapMemory / memorySampleCount : 0;
+
+        // Получаем метрики БД из importService
+        long totalDbQueryTimeMs = importService.getTotalQueryTimeMs();
+        int totalDbQueries = importService.getTotalQueries();
+
+        // Получаем метрики кэша из importService
+        long cacheHits = importService.getCacheHits();
+        long cacheMisses = importService.getCacheMisses();
+        int localityCacheSize = importService.getLocalityCacheSize();
+        int streetCacheSize = importService.getStreetCacheSize();
+        int houseCacheSize = importService.getHouseCacheSize();
+        int apartmentCacheSize = importService.getApartmentCacheSize();
 
         // Генерируем отчёт
         reportGenerator.generateErrorReport(config.getErrorReportPath(),
@@ -179,6 +261,21 @@ public class EtlService {
                         .errorCounts(errorCounts)
                         .correctedErrorCounts(correctedErrorCounts)
                         .dbErrorCounts(dbErrorCounts)
+                        .totalTimeMs(totalTimeMs)
+                        .parseTimeMs(parseTimeMs)
+                        .correctTimeMs(correctTimeMs)
+                        .dbImportTimeMs(dbImportTimeMs)
+                        .fileWriteTimeMs(fileWriteTimeMs)
+                        .peakHeapMemoryBytes(peakHeapMemory)
+                        .avgHeapMemoryBytes(avgHeapMemory)
+                        .totalDbQueryTimeMs(totalDbQueryTimeMs)
+                        .totalDbQueries(totalDbQueries)
+                        .cacheHits(cacheHits)
+                        .cacheMisses(cacheMisses)
+                        .localityCacheSize(localityCacheSize)
+                        .streetCacheSize(streetCacheSize)
+                        .houseCacheSize(houseCacheSize)
+                        .apartmentCacheSize(apartmentCacheSize)
                         .build(),
                 errorSamples);
 
@@ -193,6 +290,21 @@ public class EtlService {
                 .errorCounts(errorCounts)
                 .correctedErrorCounts(correctedErrorCounts)
                 .dbErrorCounts(dbErrorCounts)
+                .totalTimeMs(totalTimeMs)
+                .parseTimeMs(parseTimeMs)
+                .correctTimeMs(correctTimeMs)
+                .dbImportTimeMs(dbImportTimeMs)
+                .fileWriteTimeMs(fileWriteTimeMs)
+                .peakHeapMemoryBytes(peakHeapMemory)
+                .avgHeapMemoryBytes(avgHeapMemory)
+                .totalDbQueryTimeMs(totalDbQueryTimeMs)
+                .totalDbQueries(totalDbQueries)
+                .cacheHits(cacheHits)
+                .cacheMisses(cacheMisses)
+                .localityCacheSize(localityCacheSize)
+                .streetCacheSize(streetCacheSize)
+                .houseCacheSize(houseCacheSize)
+                .apartmentCacheSize(apartmentCacheSize)
                 .build();
     }
 
