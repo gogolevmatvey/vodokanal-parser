@@ -298,7 +298,7 @@ public class DatabaseImportService {
 
     /**
      * Сохранить пакет записей в базу данных.
-     * Использует batch-операции для accounts, billing periods и meter charges.
+     * Все операции выполняются в одной транзакции (одно соединение).
      */
     public BatchResult saveBatch(List<String> records, int maxErrorSamples) {
         long batchStart = System.nanoTime();
@@ -306,7 +306,7 @@ public class DatabaseImportService {
         Map<String, Integer> errorCounts = new TreeMap<>();
         Map<String, List<String>> errorSamples = new HashMap<>();
 
-        // Phase 1: Парсинг и разрешение адресов (с кэшем)
+        // Phase 1: Парсинг и разрешение адресов (с кэшем) — без БД
         List<BatchEntry> entries = new ArrayList<>();
         for (String line : records) {
             try {
@@ -328,11 +328,18 @@ public class DatabaseImportService {
             return new BatchResult(0, errorCount, errorCounts, errorSamples);
         }
 
-        // Phase 2-4: Batch-операции в одной транзакции
-        try {
-            batchSaveAccounts(entries);
-            batchSaveBillingPeriods(entries);
-            batchSaveMeterCharges(entries);
+        // Phase 2-6: Batch-операции в ОДНОЙ транзакции
+        try (Connection conn = dataSource.getConnection()) {
+            conn.setAutoCommit(false);
+            try {
+                batchSaveAccounts(entries, conn);
+                batchSaveBillingPeriods(entries, conn);
+                batchSaveMeterCharges(entries, conn);
+                conn.commit();
+            } catch (SQLException e) {
+                conn.rollback();
+                throw e;
+            }
         } catch (Exception e) {
             // Batch-операция провалилась — помечаем все записи как ошибки
             errorCount += entries.size();
@@ -384,7 +391,7 @@ public class DatabaseImportService {
     /**
      * Batch-операция: найти или создать accounts
      */
-    private void batchSaveAccounts(List<BatchEntry> entries) throws SQLException {
+    private void batchSaveAccounts(List<BatchEntry> entries, Connection conn) throws SQLException {
         // Собираем уникальные номера счетов
         Map<String, BatchEntry> byAccountNumber = new LinkedHashMap<>();
         for (BatchEntry e : entries) {
@@ -394,7 +401,7 @@ public class DatabaseImportService {
         List<String> accountNumbers = new ArrayList<>(byAccountNumber.keySet());
 
         // Находим существующие счета
-        Map<String, Long> existingIds = findExistingAccounts(accountNumbers);
+        Map<String, Long> existingIds = findExistingAccounts(accountNumbers, conn);
 
         // Разделяем на существующие и новые
         List<BatchEntry> newEntries = new ArrayList<>();
@@ -411,13 +418,13 @@ public class DatabaseImportService {
 
         // Batch-вставка новых счетов
         if (!newEntries.isEmpty()) {
-            batchInsertAccounts(newEntries);
+            batchInsertAccounts(newEntries, conn);
             // Перенаходим, чтобы получить ID новых записей
             List<String> newNumbers = new ArrayList<>();
             for (BatchEntry e : newEntries) {
                 newNumbers.add(e.data.getAccountNumber());
             }
-            Map<String, Long> newlyInserted = findExistingAccounts(newNumbers);
+            Map<String, Long> newlyInserted = findExistingAccounts(newNumbers, conn);
             for (BatchEntry e : newEntries) {
                 e.accountId = newlyInserted.get(e.data.getAccountNumber());
             }
@@ -434,24 +441,22 @@ public class DatabaseImportService {
     /**
      * Найти существующие счета по номерам (с чанкованием IN-запроса)
      */
-    private Map<String, Long> findExistingAccounts(List<String> accountNumbers) throws SQLException {
+    private Map<String, Long> findExistingAccounts(List<String> accountNumbers, Connection conn) throws SQLException {
         Map<String, Long> result = new HashMap<>();
         if (accountNumbers.isEmpty()) return result;
 
-        try (Connection conn = dataSource.getConnection()) {
-            for (int i = 0; i < accountNumbers.size(); i += IN_CHUNK_SIZE) {
-                int end = Math.min(i + IN_CHUNK_SIZE, accountNumbers.size());
-                List<String> chunk = accountNumbers.subList(i, end);
-                String placeholders = String.join(",", Collections.nCopies(chunk.size(), "?"));
-                String sql = "SELECT id, account_number FROM accounts WHERE account_number IN (" + placeholders + ")";
-                try (PreparedStatement stmt = conn.prepareStatement(sql)) {
-                    for (int j = 0; j < chunk.size(); j++) {
-                        stmt.setString(j + 1, chunk.get(j));
-                    }
-                    try (ResultSet rs = stmt.executeQuery()) {
-                        while (rs.next()) {
-                            result.put(rs.getString("account_number"), rs.getLong("id"));
-                        }
+        for (int i = 0; i < accountNumbers.size(); i += IN_CHUNK_SIZE) {
+            int end = Math.min(i + IN_CHUNK_SIZE, accountNumbers.size());
+            List<String> chunk = accountNumbers.subList(i, end);
+            String placeholders = String.join(",", Collections.nCopies(chunk.size(), "?"));
+            String sql = "SELECT id, account_number FROM accounts WHERE account_number IN (" + placeholders + ")";
+            try (PreparedStatement stmt = conn.prepareStatement(sql)) {
+                for (int j = 0; j < chunk.size(); j++) {
+                    stmt.setString(j + 1, chunk.get(j));
+                }
+                try (ResultSet rs = stmt.executeQuery()) {
+                    while (rs.next()) {
+                        result.put(rs.getString("account_number"), rs.getLong("id"));
                     }
                 }
             }
@@ -462,26 +467,24 @@ public class DatabaseImportService {
     /**
      * Batch-вставка новых счетов с ON CONFLICT
      */
-    private void batchInsertAccounts(List<BatchEntry> entries) throws SQLException {
+    private void batchInsertAccounts(List<BatchEntry> entries, Connection conn) throws SQLException {
         String sql = "INSERT INTO accounts (apartment_id, account_number, payer_name) VALUES (?, ?, ?) " +
                      "ON CONFLICT (account_number) DO UPDATE SET payer_name = EXCLUDED.payer_name";
-        try (Connection conn = dataSource.getConnection()) {
-            try (PreparedStatement stmt = conn.prepareStatement(sql)) {
-                for (BatchEntry entry : entries) {
-                    stmt.setLong(1, entry.apartmentId);
-                    stmt.setString(2, entry.data.getAccountNumber());
-                    stmt.setString(3, entry.data.getPayerName());
-                    stmt.addBatch();
-                }
-                stmt.executeBatch();
+        try (PreparedStatement stmt = conn.prepareStatement(sql)) {
+            for (BatchEntry entry : entries) {
+                stmt.setLong(1, entry.apartmentId);
+                stmt.setString(2, entry.data.getAccountNumber());
+                stmt.setString(3, entry.data.getPayerName());
+                stmt.addBatch();
             }
+            stmt.executeBatch();
         }
     }
 
     /**
      * Batch-операция: найти или создать billing periods
      */
-    private void batchSaveBillingPeriods(List<BatchEntry> entries) throws SQLException {
+    private void batchSaveBillingPeriods(List<BatchEntry> entries, Connection conn) throws SQLException {
         // Собираем уникальные (accountId, period)
         Map<String, BatchEntry> byKey = new LinkedHashMap<>();
         for (BatchEntry e : entries) {
@@ -490,7 +493,7 @@ public class DatabaseImportService {
         }
 
         // Находим существующие периоды
-        Map<String, Long> existingIds = findExistingBillingPeriods(byKey.keySet());
+        Map<String, Long> existingIds = findExistingBillingPeriods(byKey.keySet(), conn);
 
         // Определяем новые периоды
         List<Map.Entry<String, BatchEntry>> newEntries = new ArrayList<>();
@@ -503,49 +506,45 @@ public class DatabaseImportService {
 
         // Batch-вставка новых периодов
         if (!newEntries.isEmpty()) {
-            batchInsertBillingPeriods(newEntries);
+            batchInsertBillingPeriods(newEntries, conn);
         }
     }
 
     /**
      * Найти существующие billing periods по ключам (accountId::period)
      */
-    private Map<String, Long> findExistingBillingPeriods(Collection<String> keys) throws SQLException {
+    private Map<String, Long> findExistingBillingPeriods(Collection<String> keys, Connection conn) throws SQLException {
         Map<String, Long> result = new HashMap<>();
         if (keys.isEmpty()) return result;
 
         // Разбиваем ключи на accountId и period
         Map<Long, List<String>> byAccountId = new HashMap<>();
-        Map<String, String> keyToPeriod = new HashMap<>();
         for (String key : keys) {
             String[] parts = key.split("::", 2);
             Long accountId = Long.parseLong(parts[0]);
             String period = parts[1];
             byAccountId.computeIfAbsent(accountId, k -> new ArrayList<>()).add(period);
-            keyToPeriod.put(key, period);
         }
 
-        try (Connection conn = dataSource.getConnection()) {
-            for (Map.Entry<Long, List<String>> me : byAccountId.entrySet()) {
-                Long accountId = me.getKey();
-                List<String> periods = me.getValue();
+        for (Map.Entry<Long, List<String>> me : byAccountId.entrySet()) {
+            Long accountId = me.getKey();
+            List<String> periods = me.getValue();
 
-                for (int i = 0; i < periods.size(); i += IN_CHUNK_SIZE) {
-                    int end = Math.min(i + IN_CHUNK_SIZE, periods.size());
-                    List<String> chunk = periods.subList(i, end);
-                    String placeholders = String.join(",", Collections.nCopies(chunk.size(), "?"));
-                    String sql = "SELECT id, period FROM billing_periods WHERE account_id = ? AND period IN (" + placeholders + ")";
-                    try (PreparedStatement stmt = conn.prepareStatement(sql)) {
-                        stmt.setLong(1, accountId);
-                        for (int j = 0; j < chunk.size(); j++) {
-                            stmt.setString(j + 2, chunk.get(j));
-                        }
-                        try (ResultSet rs = stmt.executeQuery()) {
-                            while (rs.next()) {
-                                String period = rs.getString("period");
-                                String key = accountId + "::" + period;
-                                result.put(key, rs.getLong("id"));
-                            }
+            for (int i = 0; i < periods.size(); i += IN_CHUNK_SIZE) {
+                int end = Math.min(i + IN_CHUNK_SIZE, periods.size());
+                List<String> chunk = periods.subList(i, end);
+                String placeholders = String.join(",", Collections.nCopies(chunk.size(), "?"));
+                String sql = "SELECT id, period FROM billing_periods WHERE account_id = ? AND period IN (" + placeholders + ")";
+                try (PreparedStatement stmt = conn.prepareStatement(sql)) {
+                    stmt.setLong(1, accountId);
+                    for (int j = 0; j < chunk.size(); j++) {
+                        stmt.setString(j + 2, chunk.get(j));
+                    }
+                    try (ResultSet rs = stmt.executeQuery()) {
+                        while (rs.next()) {
+                            String period = rs.getString("period");
+                            String key = accountId + "::" + period;
+                            result.put(key, rs.getLong("id"));
                         }
                     }
                 }
@@ -557,27 +556,25 @@ public class DatabaseImportService {
     /**
      * Batch-вставка новых billing periods с ON CONFLICT
      */
-    private void batchInsertBillingPeriods(List<Map.Entry<String, BatchEntry>> entries) throws SQLException {
+    private void batchInsertBillingPeriods(List<Map.Entry<String, BatchEntry>> entries, Connection conn) throws SQLException {
         String sql = "INSERT INTO billing_periods (account_id, period, total_amount) VALUES (?, ?, ?) " +
                      "ON CONFLICT (account_id, period) DO UPDATE SET total_amount = EXCLUDED.total_amount";
-        try (Connection conn = dataSource.getConnection()) {
-            try (PreparedStatement stmt = conn.prepareStatement(sql)) {
-                for (Map.Entry<String, BatchEntry> me : entries) {
-                    BatchEntry entry = me.getValue();
-                    stmt.setLong(1, entry.accountId);
-                    stmt.setString(2, entry.data.getBillingPeriod());
-                    stmt.setBigDecimal(3, entry.data.getTotalAmount());
-                    stmt.addBatch();
-                }
-                stmt.executeBatch();
+        try (PreparedStatement stmt = conn.prepareStatement(sql)) {
+            for (Map.Entry<String, BatchEntry> me : entries) {
+                BatchEntry entry = me.getValue();
+                stmt.setLong(1, entry.accountId);
+                stmt.setString(2, entry.data.getBillingPeriod());
+                stmt.setBigDecimal(3, entry.data.getTotalAmount());
+                stmt.addBatch();
             }
+            stmt.executeBatch();
         }
     }
 
     /**
      * Batch-вставка meter charges
      */
-    private void batchSaveMeterCharges(List<BatchEntry> entries) throws SQLException {
+    private void batchSaveMeterCharges(List<BatchEntry> entries, Connection conn) throws SQLException {
         // Собираем все meter charges
         List<MeterChargeData> charges = new ArrayList<>();
         for (BatchEntry entry : entries) {
@@ -601,22 +598,20 @@ public class DatabaseImportService {
                      "VALUES (?, ?, ?, ?, ?) " +
                      "ON CONFLICT (account_id, period, meter_name) DO UPDATE " +
                      "SET reading = EXCLUDED.reading, amount = EXCLUDED.amount";
-        try (Connection conn = dataSource.getConnection()) {
-            try (PreparedStatement stmt = conn.prepareStatement(sql)) {
-                for (MeterChargeData mc : charges) {
-                    stmt.setLong(1, mc.accountId);
-                    stmt.setString(2, mc.period);
-                    stmt.setString(3, mc.meterName);
-                    if (mc.reading != null) {
-                        stmt.setBigDecimal(4, mc.reading);
-                    } else {
-                        stmt.setNull(4, Types.DECIMAL);
-                    }
-                    stmt.setBigDecimal(5, mc.amount);
-                    stmt.addBatch();
+        try (PreparedStatement stmt = conn.prepareStatement(sql)) {
+            for (MeterChargeData mc : charges) {
+                stmt.setLong(1, mc.accountId);
+                stmt.setString(2, mc.period);
+                stmt.setString(3, mc.meterName);
+                if (mc.reading != null) {
+                    stmt.setBigDecimal(4, mc.reading);
+                } else {
+                    stmt.setNull(4, Types.DECIMAL);
                 }
-                stmt.executeBatch();
+                stmt.setBigDecimal(5, mc.amount);
+                stmt.addBatch();
             }
+            stmt.executeBatch();
         }
     }
 
