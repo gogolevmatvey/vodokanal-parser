@@ -1,7 +1,6 @@
 package org.example.etl;
 
 import org.example.model.common.ParseResult;
-import org.example.repository.*;
 import org.example.service.parsing.RecordParser;
 import org.example.service.parsing.RecordCorrector;
 import org.springframework.beans.factory.annotation.Autowired;

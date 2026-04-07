@@ -93,7 +93,6 @@ public class RecordCorrector {
             if (commaCount < 3) {
                 String locality = addressParts.length > 0 ? addressParts[0].trim() : "Населенный пункт не указан";
                 String street = addressParts.length > 1 ? addressParts[1].trim() : "Улица не указана";
-                String house = addressParts.length > 2 ? addressParts[2].trim() : "Дом не указан";
 
                 if (commaCount == 0) {
                     parts[2] = locality + ", Улица не указана, Дом не указан, Квартира не указана";

@@ -5,7 +5,6 @@ import org.example.model.domain.BillingPeriod;
 import org.example.repository.BillingPeriodRepository;
 
 import javax.sql.DataSource;
-import java.math.BigDecimal;
 import java.sql.*;
 import java.util.ArrayList;
 import java.util.List;

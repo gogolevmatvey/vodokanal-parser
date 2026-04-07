@@ -5,7 +5,6 @@ import org.example.model.domain.MeterCharge;
 import org.example.repository.MeterChargeRepository;
 
 import javax.sql.DataSource;
-import java.math.BigDecimal;
 import java.sql.*;
 import java.util.ArrayList;
 import java.util.List;

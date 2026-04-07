@@ -1,7 +1,6 @@
 package org.example;
 
 import org.example.model.common.ParseResult;
-import org.example.model.common.ParsedRecord;
 import org.example.service.parsing.RecordParser;
 import org.example.service.parsing.RecordCorrector;
 import org.junit.jupiter.api.Test;
@@ -17,15 +16,6 @@ class MainTest {
 
     private final RecordParser parser = new RecordParser();
     private final RecordCorrector corrector = new RecordCorrector();
-
-    // Вспомогательные методы
-    private ParseResult parseRecord(String line) {
-        return parser.parse(line);
-    }
-
-    private String correctRecord(String line, String errorMessage) {
-        return corrector.correct(line, errorMessage);
-    }
 
     @Test
     @DisplayName("Парсинг валидной записи")
@@ -480,7 +470,6 @@ class MainTest {
     @DisplayName("Адрес с пустыми частями")
     void testAddressWithEmptyParts() {
         String line = "900076103;Ш****** ******* **********;Беречино, 182, ,;519;59.69";
-        String errorMessage = "Пустая часть адреса";
 
         ParseResult result = parser.parse(line);
 

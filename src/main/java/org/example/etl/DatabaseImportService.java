@@ -61,23 +61,12 @@ public class DatabaseImportService {
      * Запись для batch-обработки
      */
     private static class BatchEntry {
-        final String line;
         final ParsedRecord data;
-        final String localityName;
-        final String streetName;
-        final String houseNumber;
-        final String apartmentNumber;
         Long apartmentId;
         Long accountId;
 
-        BatchEntry(String line, ParsedRecord data, String localityName,
-                   String streetName, String houseNumber, String apartmentNumber) {
-            this.line = line;
+        BatchEntry(ParsedRecord data) {
             this.data = data;
-            this.localityName = localityName;
-            this.streetName = streetName;
-            this.houseNumber = houseNumber;
-            this.apartmentNumber = apartmentNumber;
         }
 
         BatchEntry apartmentId(Long apartmentId) {
@@ -306,7 +295,7 @@ public class DatabaseImportService {
         Map<String, Integer> errorCounts = new TreeMap<>();
         Map<String, List<String>> errorSamples = new HashMap<>();
 
-        // Phase 1: Парсинг и разрешение адресов (с кэшем) — без БД
+        // Фаза 1: Парсинг и разрешение адресов (с кэшем) — без БД
         List<BatchEntry> entries = new ArrayList<>();
         for (String line : records) {
             try {
@@ -314,7 +303,7 @@ public class DatabaseImportService {
             } catch (Exception e) {
                 errorCount++;
                 String errorType = extractDbErrorType(e.getMessage());
-                errorCounts.merge(errorType, 1, Integer::sum);
+                errorCounts.merge(errorType, 1, (a, b) -> a + b);
                 List<String> samples = errorSamples.computeIfAbsent(errorType, k -> new ArrayList<>());
                 if (samples.size() < maxErrorSamples) {
                     samples.add(line.substring(0, Math.min(150, line.length())));
@@ -328,7 +317,7 @@ public class DatabaseImportService {
             return new BatchResult(0, errorCount, errorCounts, errorSamples);
         }
 
-        // Phase 2-6: Batch-операции в ОДНОЙ транзакции
+        // Фазы 2-6: Batch-операции в ОДНОЙ транзакции
         try (Connection conn = dataSource.getConnection()) {
             conn.setAutoCommit(false);
             try {
@@ -344,7 +333,7 @@ public class DatabaseImportService {
             // Batch-операция провалилась — помечаем все записи как ошибки
             errorCount += entries.size();
             String errorType = extractDbErrorType(e.getMessage());
-            errorCounts.merge(errorType, entries.size(), Integer::sum);
+            errorCounts.merge(errorType, entries.size(), (a, b) -> a + b);
             List<String> samples = errorSamples.computeIfAbsent(errorType, k -> new ArrayList<>());
             if (samples.isEmpty()) {
                 String msg = e.getMessage();
@@ -384,7 +373,7 @@ public class DatabaseImportService {
         House house = getOrCreateHouse(street.getId(), houseNumber);
         Apartment apartment = getOrCreateApartment(house.getId(), apartmentNumber);
 
-        return new BatchEntry(line, data, localityName, streetName, houseNumber, apartmentNumber)
+        return new BatchEntry(data)
             .apartmentId(apartment.getId());
     }
 
