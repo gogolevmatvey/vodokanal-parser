@@ -83,13 +83,6 @@ mvn exec:java -Dexec.mainClass=org.example.Main
 | `GET` | `/api/localities/{id}/streets/{id}/houses/{id}/apartments?search=` | Квартиры по дому |
 | `GET` | `/api/apartments/{id}/accounts` | Лицевые счета по квартире |
 
-### Статистика
-| Метод | Endpoint | Описание |
-|-------|----------|----------|
-| `GET` | `/api/statistics` | Сводная статистика по таблицам БД |
-
-> **Авторизация:** Для доступа к API используйте Basic Auth или форму входа (логин: `admin`, пароль: `admin`).
-
 ---
 
 ## 📊 Формат входных данных
