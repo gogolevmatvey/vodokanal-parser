@@ -8,6 +8,8 @@
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-18-blue)]()
 [![Tests](https://img.shields.io/badge/tests-76%20passed-brightgreen)]()
 
+![Интерфейс приложения](assets/screenshots/main-ui.png)
+
 ---
 
 ## 📖 О проекте
